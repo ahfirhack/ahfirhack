@@ -153,6 +153,11 @@ def _mix_audio(voice_path: str, music_path: str, output_path: str, music_volume:
     # Total duration = voice + 1 second delay
     total_dur = voice_dur + 1
 
+    # Guard: if music file is unreadable or empty, skip mixing
+    if music_dur <= 0:
+        print("[Assembler] Warning: Could not read music duration, skipping music mix.")
+        return voice_path
+
     # Extend music if shorter than total duration
     if music_dur < total_dur:
         loop_count = int(total_dur / music_dur) + 1
@@ -282,7 +287,12 @@ def _build_caption_filter(script: str, total_dur: float, font_bold: str) -> str:
     cap_start = 2.0
     cap_end   = max(total_dur - END_SCREEN_DURATION, total_dur * 0.85)
     cap_dur   = cap_end - cap_start
-    seg       = cap_dur / max(len(blocks), 1)
+
+    # Guard: if video is too short to fit captions, bail out
+    if cap_dur <= 0:
+        return ""
+
+    seg = cap_dur / max(len(blocks), 1)
 
     filters = []
     for bi, block in enumerate(blocks):
@@ -334,7 +344,7 @@ def assemble_video(clip_paths, audio_path, script, output_filename, channel_name
     if sys.platform == "win32":
         audio_path = audio_path.replace("\\", "/").replace(":", "\\:", 1)
 
-    a_dur = _dur(audio_path.replace("\\:", ":", 1).replace("/", "\\"))
+    a_dur = _dur(audio_path)
     total = a_dur + END_SCREEN_DURATION
 
     # Extend audio with silence for end screen
