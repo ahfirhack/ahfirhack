@@ -8,6 +8,7 @@ What it does automatically:
   - Encodes all credential files to base64
   - Pushes every secret + API key to GitHub
   - Bot runs forever after this
+github apikey: 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
 """
 
 import os, sys, json, base64, subprocess, time, pickle
@@ -16,36 +17,38 @@ import requests
 # ─────────────────────────────────────────────
 # FILL THESE IN (only 2 lines required)
 # ─────────────────────────────────────────────
-GITHUB_REPO    = "Ahfirnet/Ahfirh86"
-GITHUB_PAT     = "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"
+GITHUB_REPO    = "ahfirhack/ahfirhack"
+GITHUB_PAT     = "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"
+
 # ─────────────────────────────────────────────
 
 CHANNELS = [
     {
         "id":      1,
-        "name":    "Motivational Quotes",
+        "name":    "Karma & Revenge Stories", # PIVOT: High Retention
         "secrets": "credentials/channel1_secrets.json",
         "token":   "credentials/channel1_token.json",
     },
     {
         "id":      2,
-        "name":    "Weird Facts",
+        "name":    "The History Mystery",      # PIVOT: Educational/Documentary
         "secrets": "credentials/channel2_secrets.json",
         "token":   "credentials/channel2_token.json",
     },
     {
         "id":      3,
-        "name":    "People Stories",
+        "name":    "Digital & Home Declutter", # PIVOT: Specific Utility
         "secrets": "credentials/channel3_secrets.json",
         "token":   "credentials/channel3_token.json",
     },
     {
         "id":      4,
-        "name":    "Life Hacks",
+        "name":    "The Modern Stoic",         # PIVOT: Men's Mental Health
         "secrets": "credentials/channel4_secrets.json",
         "token":   "credentials/channel4_token.json",
     },
 ]
+
 
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
