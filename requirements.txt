@@ -1,0 +1,13 @@
+google-generativeai
+edge-tts
+moviepy==1.0.3
+requests
+certifi
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+imageio[ffmpeg]
+elevenlabs
+deepgram-sdk
+boto3
