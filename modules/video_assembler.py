@@ -337,8 +337,7 @@ def assemble_video(clip_paths, audio_path, script, output_filename, channel_name
     # Mix voice + music if music is provided
     if music_path and os.path.exists(music_path):
         mixed_audio = os.path.join(TEMP_DIR, "mixed_audio.mp3")
-        _mix_audio(audio_path, music_path, mixed_audio, music_volume=0.25)
-        audio_path = mixed_audio
+        audio_path = _mix_audio(audio_path, music_path, mixed_audio, music_volume=0.25)
 
     # Escape audio path for Windows
     if sys.platform == "win32":
