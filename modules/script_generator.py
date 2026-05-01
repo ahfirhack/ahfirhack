@@ -133,7 +133,7 @@ def _detect_niche_key(niche: str) -> str:
 
 def _get_fallback(niche: str) -> dict:
     key     = _detect_niche_key(niche)
-    scripts = FALLBACK_SCRIPTS.get(key, FALLBACK_SCRIPTS["lifehacks"])
+    scripts = FALLBACK_SCRIPTS.get(key, FALLBACK_SCRIPTS["storytelling"])
     data    = random.choice(scripts)
     # Ensure search query is visual and specific
     if len(data["search_query"].split()) < 3:
@@ -248,7 +248,7 @@ def _try_claude(prompt: str) -> dict | None:
         resp = requests.post(CLAUDE_URL,
             headers={"x-api-key": CLAUDE_API_KEY, "anthropic-version": "2023-06-01",
                      "Content-Type": "application/json"},
-            json={"model": "claude-opus-4-5", "max_tokens": 500,
+            json={"model": "claude-3-5-sonnet-20241022", "max_tokens": 500,
                   "messages": [{"role": "user", "content": prompt}]},
             timeout=(8, 25))
         if resp.status_code in (429, 401, 403):
