@@ -58,34 +58,6 @@ NICHE_SEARCH_HINTS = {
         "calm ocean waves at sunset",
         "person reading book quietly",
     ],
-    "lifehacks": [
-        "person showing kitchen trick",
-        "cleaning hack demonstration",
-        "DIY project before after",
-        "smart home device setup",
-        "organizing closet efficiently",
-    ],
-    "motivational": [
-        "person looking at sunrise",
-        "athlete training hard",
-        "person writing in journal",
-        "peaceful nature landscape",
-        "person achieving goal celebration",
-    ],
-    "weird_facts": [
-        "strange natural phenomenon",
-        "unusual animal behavior",
-        "bizarre scientific discovery",
-        "mysterious ancient structure",
-        "weird optical illusion",
-    ],
-    "mystery": [
-        "dark foggy forest path",
-        "abandoned building interior",
-        "mysterious glowing object",
-        "person looking at map confused",
-        "ancient mysterious symbol",
-    ],
 }
 
 # ── UPDATED FALLBACK SCRIPTS (Optimized for 2026 High-Retention Niches) ──
@@ -93,7 +65,7 @@ NICHE_SEARCH_HINTS = {
 FALLBACK_SCRIPTS = {
     "storytelling": [ # For the "Karma & Revenge" Channel
         {"title": "The Neighbor Who Regretted Everything", "script": "My neighbor blocked my driveway for six months. He laughed every time I asked him to move. He thought he was untouchable because he knew the city council. So I stopped asking. I spent three weeks researching local zoning laws. I found out his entire garage was built two feet over the property line. One anonymous tip later and the city ordered him to tear it down. It cost him forty thousand dollars. Now my driveway is clear and he doesn't even look at me. Justice is a dish best served with blueprints.", "tags": ["prorevenge", "karma", "satisfying", "neighborwars", "justice"], "search_query": "angry man looking at construction site"},
-        {"title": "The Boss Who Fired Me on My Birthday", "script": "My boss fired me on my birthday to save his own bonus. He told me I was 'redundant.' What he didn't know was that I was the only one with the encryption keys to our main client database. When he called me three days later begging for the password, I told him my consulting fee was now ten times my old salary. He had to pay up or lose a million-dollar contract. Never fire the person who holds the keys to the castle. Now I'm retired and he's still working weekends.", "tags": ["workplacejustice", "karma", "bossstories", "satisfying", "revenge"], "search_query": "person walking away from office building smiling"},
+       
     ],
     "documentary": [ # For the "History Mystery" Channel
         {"title": "The Machine That Shouldn't Exist", "script": "In 1901, divers found a rusted bronze device in an ancient shipwreck. They thought it was a gear. It turned out to be a computer built two thousand years ago. It’s called the Antikythera Mechanism. It could predict eclipses and track the stars with terrifying accuracy. But there's a problem. This level of technology wasn't supposed to exist for another thousand years. Who built it? And where did that knowledge go? History isn't a straight line. It's a series of lost secrets.", "tags": ["historymystery", "ancienttech", "unexplained", "lostcivilization", "science"], "search_query": "ancient rusted bronze gears artifact"},
@@ -151,14 +123,13 @@ VOICE-OPTIMIZED RULES:
 1. SCRIPT LENGTH: 80-100 words. (Crucial for a 30-40 second pace).
 2. CONVERSATIONAL TONE: Use contractions (don't, it's). No complex jargon. Speak like a person, not a bot.
 3. THE HOOK: The first sentence must trigger an emotional response (Anger, Curiosity, or Shock).
-   - For Stories: Start with the conflict. "My boss fired me on my birthday."
-   - For Mystery: Start with a mystery. "Six tons of solid gold just vanished."
-   - For Utility: "Stop. You are doing this wrong."
+   - For Stories: Start with the conflict.
+   - For Mystery: Start with a mystery.
 4. STRUCTURE: No "Welcome back" or "Thanks for watching." Get straight to the point.
 5. THE LOOP: The final sentence must flow back into the first sentence to encourage re-watches.
 6. SENTENCE LENGTH: 5-12 words max. Short sentences create better rhythm in ElevenLabs.
 7. CRITICAL: Do NOT repeat the first sentence at the end. The loop should be thematic, not literal repetition.
-8. CRITICAL: End with "Subscribe for more" as the final call-to-action.
+8. CRITICAL: End with "Subscribe for more" as the final call-to-action and make it in another paragraph alone.
 
 SEARCH QUERY RULE: The search_query must describe CLEAR VISUAL ACTION for stock footage.
 GOOD: "sad office worker walking", "ancient gold coins in dirt", "person organizing messy desk"
