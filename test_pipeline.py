@@ -27,8 +27,7 @@ def test_channel(ch):
     voice_path = None
     if uv:
         voice_path = os.path.join(TEMP_DIR, f"{sn}_{ts}_voice.mp3")
-        voice_style = ch.get("hook_style", "default")
-        generate_voiceover(data["script"], voice_path, voice_style=voice_style)
+        generate_voiceover(data["script"], voice_path, channel_id=ch["id"])
 
     # Generate background music
     music_path = os.path.join(TEMP_DIR, f"{sn}_{ts}_music.mp3")

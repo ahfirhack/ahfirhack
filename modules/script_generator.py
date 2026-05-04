@@ -15,7 +15,7 @@ import random
 import time
 import boto3
 from botocore.exceptions import ClientError
-from config import GEMINI_API_KEY, GROQ_API_KEY, CLAUDE_API_KEY, NOVA_API_KEY, AMAZON_NAME_KEY, AMAZON_API_KEY, AMAZON_REGION
+from config import GEMINI_API_KEY, GROQ_API_KEY, CLAUDE_API_KEY, NOVA_API_KEY, AMAZON_ACCESS_KEY, AMAZON_SECRET_KEY, AMAZON_REGION
 
 GROQ_URL   = "https://api.groq.com/openai/v1/chat/completions"
 GEMINI_URL = (
@@ -257,12 +257,12 @@ def _try_claude(prompt: str) -> dict | None:
 
 def _try_amazon(prompt: str) -> dict | None:
     """Generate script using Amazon Bedrock (Claude or other models)."""
-    if not AMAZON_NAME_KEY or not AMAZON_API_KEY:
+    if not AMAZON_ACCESS_KEY or not AMAZON_SECRET_KEY:
         return None
     try:
         # Decode the base64 API key to get access key and secret key
         import base64
-        decoded = base64.b64decode(AMAZON_API_KEY).decode('utf-8')
+        decoded = base64.b64decode(AMAZON_SECRET_KEY).decode('utf-8')
         # The decoded string should contain the access key and secret key
         # Format: "AccessKeyID:SecretAccessKey"
         if ':' in decoded:
@@ -270,7 +270,7 @@ def _try_amazon(prompt: str) -> dict | None:
         else:
             # If no colon, use the whole string as access key (fallback)
             access_key = decoded
-            secret_key = AMAZON_NAME_KEY
+            secret_key = AMAZON_ACCESS_KEY
 
         client = boto3.client(
             service_name="bedrock-runtime",

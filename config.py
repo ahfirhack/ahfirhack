@@ -40,6 +40,8 @@ JAMENDO_CLIENT_ID     = "b72ab361"
 FREESOUND_API_KEY     = "lXPQoR31V3wHx7CVfQZUGuJgvNKUlAjqJETiSxRQ"
 
 POLLINATIONS_ENABLED = True
+USED_VIDEOS_FILE   = "used_videos.json"
+USED_SCRIPTS_FILE  = "used_scripts.json"
 MUSIC_CACHE_DIR    = "music_cache"
 
 

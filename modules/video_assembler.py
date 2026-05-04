@@ -1,9 +1,9 @@
 """
-video_assembler.py (v8 — Shorts Optimized 2026)
-- Full HD 1080×1920, 9:16 vertical, 8 Mbps, CRF 18
-- Captions: 4 words per line, 2-3 lines per block (never 1 or 4+)
-- Short-script mode: script stays on screen until video ends (font size 42)
-- Visual hook in first 1.5 s
+video_assembler.py (v9 — 2K Quality, Voice-Synced Captions)
+- 2K Quality 1440×2560, 9:16 vertical, 12 Mbps, CRF 16
+- Captions sync with voice timing
+- Channel-specific voices
+- Visual hook in first 2s (stand-alone effect)
 - End-screen fade to black
 """
 
@@ -12,11 +12,11 @@ import sys
 import subprocess
 import random
 import requests
-from config import TEMP_DIR, OUTPUT_DIR, FONT_BASE_DIR, PREFERRED_FONTS, WINDOWS_FONT_PATHS, END_SCREEN_DURATION
+from config import TEMP_DIR, OUTPUT_DIR, FONT_BASE_DIR, PREFERRED_FONTS, WINDOWS_FONT_PATHS, END_SCREEN_DURATION, VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_BITRATE, VIDEO_CRF
 
-# Full HD portrait — YouTube Shorts standard
-WIDTH  = 1080
-HEIGHT = 1920
+# Use quality settings from config
+WIDTH  = VIDEO_WIDTH   # 1440 (2K)
+HEIGHT = VIDEO_HEIGHT # 2560 (2K)
 
 # Caption constants
 WORDS_PER_LINE         = 5
@@ -181,11 +181,11 @@ def _mix_audio(voice_path: str, music_path: str, output_path: str, music_volume:
 
 
 def _resize(inp, out):
-    """Scale to Full HD portrait 1080×1920, high quality."""
+    """Scale to 2K portrait 1440×2560, high quality."""
     _ffmpeg(["-i", inp,
              "-vf", f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,crop={WIDTH}:{HEIGHT}",
-             "-c:v", "libx264", "-preset", "medium", "-crf", "18",
-             "-c:a", "aac", "-b:a", "256k", "-r", "30",
+             "-c:v", "libx264", "-preset", "medium", "-crf", str(VIDEO_CRF),
+             "-c:a", "aac", "-b:a", "320k", "-r", "30",
              "-pix_fmt", "yuv420p", out], "resize")
 
 
@@ -399,11 +399,11 @@ def assemble_video(clip_paths, audio_path, script, output_filename, channel_name
     parts     = [p for p in [hook_f, caption_f, end_f] if p]
     vf        = ",".join(parts)
 
-    print("[Assembler] Rendering Full HD 1080×1920 (9:16) at 8 Mbps CRF 18...")
+    print(f"[Assembler] Rendering 2K {WIDTH}×{HEIGHT} (9:16) at {VIDEO_BITRATE/1000} Mbps CRF {VIDEO_CRF}...")
     _ffmpeg(["-i", ct, "-i", ext_audio, "-vf", vf,
              "-map", "0:v:0", "-map", "1:a:0",
-             "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-b:v", "8000k",
-             "-c:a", "aac", "-b:a", "256k",
+             "-c:v", "libx264", "-preset", "medium", "-crf", str(VIDEO_CRF), "-b:v", str(VIDEO_BITRATE),
+             "-c:a", "aac", "-b:a", "320k",
              "-pix_fmt", "yuv420p",
              "-t", str(total), "-r", "30", out], "render")
 

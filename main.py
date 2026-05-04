@@ -162,10 +162,9 @@ def process_video(channel: dict, video_index: int, used_scripts: set):
     # 2. Voiceover (if enabled)
     voice_path = None
     if use_voice:
-        print("[2/6] Voiceover (ElevenLabs/Deepgram)...")
+        print("[2/6] Voiceover (Deepgram/Edge TTS)...")
         voice_path = os.path.join(TEMP_DIR, f"{safe_name}_{timestamp}_voice.mp3")
-        voice_style = channel.get("hook_style", "default")
-        generate_voiceover(script, voice_path, voice_style=voice_style)
+        generate_voiceover(script, voice_path, channel_id=channel["id"])
     else:
         print("[2/6] Voiceover skipped (music only)")
 
