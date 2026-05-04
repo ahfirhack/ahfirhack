@@ -57,6 +57,30 @@ WINDOWS_FONT_PATHS = {
 # ── END SCREEN ───────────────────────────────────────────
 END_SCREEN_DURATION = 4   # reduced from 5 — every second of dead time kills completion rate
 
+# ── VIDEO QUALITY ───────────────────────────────────────────
+# Higher than Full HD for better quality
+VIDEO_WIDTH  = 1440  # 2K width (better than 1080)
+VIDEO_HEIGHT = 2560  # 2K height (better than 1920)
+VIDEO_BITRATE = 12000  # 12 Mbps for higher quality
+VIDEO_CRF     = 16     # Lower CRF = higher quality
+
+# ── CHANNEL-SPECIFIC VOICE SETTINGS ───────────────────────
+# Using Deepgram models for each channel theme
+CHANNEL_VOICES = {
+    "channel_1": "aura-2-zeus-en",      # Psychology: Deep, commanding, dramatic
+    "channel_2": "aura-2-orpheus-en",   # History: Authoritative, discovery-channel vibe
+    "channel_3": "aura-2-atlas-en",     # Declutter: Friendly, energetic, helpful
+    "channel_4": "aura-odysseus-en",    # Stoic: Calm, steady, philosophical
+}
+
+# Edge TTS fallback voices (if Deepgram fails)
+EDGE_VOICES = {
+    "channel_1": "en-US-GuyNeural",      # Male, energetic
+    "channel_2": "en-GB-RyanNeural",      # Male, British, serious
+    "channel_3": "en-US-JennyNeural",     # Female, warm, friendly
+    "channel_4": "en-US-ChristopherNeural", # Male, deep, authoritative
+}
+
 # ── ALGORITHM-OPTIMIZED SCHEDULE ─────────────────────────
 # Sweet spot: 30-45 second Shorts get highest completion rates.
 # 13s and 60s are also proven high performers.
