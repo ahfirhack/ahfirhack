@@ -22,8 +22,8 @@ ELEVENLABS_API_KEY= "sk_fdc13676018c9820a3a429bf3cf8d1acedddf2f211491fbe"
 DEEPGRAM_API_KEY  = "391bf04405ae6f72af4181e3101b6aa9e7820d7f"
 
 # Amazon Bedrock (AWS)
-AMAZON_ACCESS_KEY = ""
-AMAZON_SECRET_KEY = ""
+AMAZON_ACCESS_KEY = "BedrockAPIKey-84vr-at-717090908379"
+AMAZON_SECRET_KEY = "ABSKQmVkcm9ja0FQSUtleS04NHZyLWF0LTcxNzA5MDkwODM3OTpuTkJVcGZ1blEzZldROUlzd3ZoK1piK2VjdGl5Y1dpYWhsWWsrRWNBYUhyeFc2V3JZSFMrN3YzcStMRT0"
 AMAZON_REGION     = "us-east-1"
 # ═══════════════════════════════════════════════════════
 # STOCK MEDIA
@@ -40,8 +40,6 @@ JAMENDO_CLIENT_ID     = "b72ab361"
 FREESOUND_API_KEY     = "lXPQoR31V3wHx7CVfQZUGuJgvNKUlAjqJETiSxRQ"
 
 POLLINATIONS_ENABLED = True
-USED_VIDEOS_FILE   = "used_videos.json"
-USED_SCRIPTS_FILE  = "used_scripts.json"
 MUSIC_CACHE_DIR    = "music_cache"
 
 
@@ -77,16 +75,16 @@ UPLOAD_HOUR_UTC = 6   # 21:00 UTC = 5:00 PM EST = 2:00 PM PST
 CHANNELS = [
     {
         "id": "channel_1",
-        "name": "Karma & Revenge Stories", # PIVOT: From Quotes to Justice Stories
-        "niche": "Real stories of people getting justice, satisfying revenge narratives, and family karma events",
-        "keywords": ["pro revenge", "satisfying justice", "family drama", "karma", "entitled people stories"],
+        "name": "Psychology & Human Behavior", # Fast viral potential, broad audience
+        "niche": "Psychology facts, human behavior patterns, mind tricks, social psychology, and cognitive biases explained simply",
+        "keywords": ["psychology", "human behavior", "mind tricks", "social psychology", "cognitive bias", "psychology facts"],
         "client_secrets_file": "credentials/channel1_secrets.json",
         "token_file": "credentials/channel1_token.json",
-        "use_voice": True, # CRITICAL: High-retention stories need that human-like voice
-        "music_mood": "dramatic",
-        "category_id": "24",
-        "hook_style": "the_wrong_doing", # Start with the "villain" doing something bad
-        "script_type": "storytelling",
+        "use_voice": True,
+        "music_mood": "suspenseful",
+        "category_id": "27",
+        "hook_style": "surprising",
+        "script_type": "educational",
     },
     {
         "id": "channel_2",
