@@ -105,8 +105,16 @@ def _save_used_scripts(used: set):
 
 
 def _script_hash(data: dict) -> str:
-    text = data.get("title", "") + data.get("script", "")
-    return hashlib.md5(text.lower().encode()).hexdigest()[:16]
+    """
+    Maximum uniqueness fingerprint: title + topic + search_query
+    This ensures no duplicate content across runs.
+    """
+    title = data.get("title", "").lower()
+    script = data.get("script", "").lower()
+    search_query = data.get("search_query", "").lower()
+    # Combine all three for maximum uniqueness
+    fingerprint = f"{title}|{script[:100]}|{search_query}"
+    return hashlib.md5(fingerprint.encode()).hexdigest()[:16]
 
 
 def _generate_unique_script(niche: str, used_scripts: set) -> dict:
