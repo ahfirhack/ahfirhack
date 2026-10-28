@@ -1,8 +1,8 @@
 """
-main.py (v9 — Voice + Music, 8-hour schedule)
+main.py (v9 — Voice + Music, 12-hour schedule)
 - Voiceover using ElevenLabs/Deepgram TTS
 - Background music mixed with voice
-- Videos uploaded every 8 hours
+- Videos uploaded every 12 hours
 - Script deduplication: never repeats a title/script across runs
 - Videos uploaded as YouTube Shorts (vertical 9:16, #Shorts in title)
 """
@@ -19,9 +19,10 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from config import (
     CHANNELS, VIDEOS_PER_CHANNEL_PER_DAY, TEMP_DIR, OUTPUT_DIR,
-    SHORT_DURATION_TARGET, USED_SCRIPTS_FILE, UPLOAD_INTERVAL_SECONDS,
+    SHORT_DURATION_TARGET, USED_SCRIPTS_FILE, USED_PROMPTS_FILE,
+    UPLOAD_INTERVAL_SECONDS,
 )
-from modules.script_generator import generate_script
+from modules.script_generator import ScriptGenerationError, generate_script
 from modules.music_fetcher import generate_background_music
 from modules.video_fetcher import fetch_video_clips
 from modules.video_assembler import assemble_video
@@ -109,7 +110,23 @@ def _load_used_scripts() -> set:
 
 def _save_used_scripts(used: set):
     with open(USED_SCRIPTS_FILE, "w") as f:
-        json.dump(list(used), f)
+        json.dump(sorted(used), f, separators=(",", ":"))
+
+
+def _load_used_prompts() -> set:
+    if os.path.exists(USED_PROMPTS_FILE):
+        try:
+            with open(USED_PROMPTS_FILE, "r") as f:
+                return set(json.load(f))
+        except Exception:
+            pass
+    return set()
+
+
+def _save_used_prompts(used: set) -> None:
+    """Persist compact hashes only; never store full generated prompts."""
+    with open(USED_PROMPTS_FILE, "w") as f:
+        json.dump(sorted(used), f, separators=(",", ":"))
 
 
 def _script_hash(data: dict) -> str:
@@ -125,25 +142,81 @@ def _script_hash(data: dict) -> str:
     return hashlib.md5(fingerprint.encode()).hexdigest()[:16]
 
 
-def _generate_unique_script(niche: str, used_scripts: set) -> dict:
-    """Retry generation up to 5 times to avoid repeated scripts."""
-    data = None
-    for _ in range(5):
-        data = generate_script(niche)
-        h = _script_hash(data)
-        if h not in used_scripts:
-            used_scripts.add(h)
-            _save_used_scripts(used_scripts)
-            return data
-    # All retries produced known scripts — use it anyway to not block pipeline
-    h = _script_hash(data)
-    used_scripts.add(h)
-    _save_used_scripts(used_scripts)
-    return data
+def _normalized_text(value: str) -> str:
+    return " ".join("".join(
+        char.lower() if char.isalnum() else " " for char in value
+    ).split())
+
+
+def _prompt_hashes(channel_id: str, data: dict) -> set[str]:
+    """Create compact title/script/full-prompt hashes for duplicate blocking."""
+    title = _normalized_text(data.get("title", ""))
+    script = _normalized_text(data.get("script", ""))
+    query = _normalized_text(data.get("search_query", ""))
+    values = {"t": title, "s": script, "p": f"{title}|{script}|{query}"}
+    return {
+        f"{channel_id}:{kind}:{hashlib.sha256(value.encode()).hexdigest()[:16]}"
+        for kind, value in values.items() if value
+    }
+
+
+def _generate_unique_script(
+    channel: dict,
+    used_scripts: set,
+    used_prompts: set,
+) -> dict:
+    """Exhaust providers and fail closed instead of accepting a duplicate."""
+    niche = channel["niche"]
+    track_prompts = channel.get("track_prompt_history", False)
+
+    def is_duplicate(candidate: dict) -> bool:
+        if _script_hash(candidate) in used_scripts:
+            return True
+        return bool(track_prompts and (_prompt_hashes(channel["id"], candidate) & used_prompts))
+
+    last_error = None
+    for attempt in range(1, 4):
+        seed = hashlib.sha256(
+            f"{channel['id']}|{datetime.datetime.now().isoformat()}|{attempt}".encode()
+        ).hexdigest()[:12]
+        try:
+            data = generate_script(
+                niche,
+                allow_fallback=not channel.get("strict_ai_prompts", False),
+                reject_candidate=is_duplicate,
+                uniqueness_seed=seed,
+            )
+        except ScriptGenerationError as error:
+            last_error = error
+            print(f"[ScriptGen] Provider round {attempt}/3 produced no usable unique script")
+            continue
+
+        script_hash = _script_hash(data)
+        prompt_hashes = _prompt_hashes(channel["id"], data)
+        if script_hash in used_scripts or (track_prompts and prompt_hashes & used_prompts):
+            last_error = ScriptGenerationError("Generator returned a previously used prompt")
+            continue
+
+        used_scripts.add(script_hash)
+        _save_used_scripts(used_scripts)
+        if track_prompts:
+            used_prompts.update(prompt_hashes)
+            _save_used_prompts(used_prompts)
+        return data
+
+    raise ScriptGenerationError(
+        "All configured AI providers were exhausted without a new unique prompt; "
+        "no fallback or duplicate will be published."
+    ) from last_error
 
 
 # ── Per-video pipeline ───────────────────────────────────────
-def process_video(channel: dict, video_index: int, used_scripts: set):
+def process_video(
+    channel: dict,
+    video_index: int,
+    used_scripts: set,
+    used_prompts: set,
+):
     channel_name = channel["name"]
     niche        = channel["niche"]
     music_mood   = channel.get("music_mood", "relaxing")
@@ -173,7 +246,7 @@ def process_video(channel: dict, video_index: int, used_scripts: set):
         data = meta_manifest["story"]
         print(f"      Resuming Meta AI job: {meta_manifest['job_id']}")
     else:
-        data = _generate_unique_script(niche, used_scripts)
+        data = _generate_unique_script(channel, used_scripts, used_prompts)
 
     title        = data["title"]
     script       = data["script"]
@@ -234,7 +307,7 @@ def process_video(channel: dict, video_index: int, used_scripts: set):
     print("[5/6] Assembling...")
     fname      = f"{safe_name}_{timestamp}.mp4"
 
-    # Use voice if available, otherwise use music only
+    # Channel 3 keeps Meta's native audio; other channels use voice or music.
     audio_for_video = None if native_audio else (voice_path if voice_path else music_path)
 
     video_path = assemble_video(
@@ -282,13 +355,14 @@ def run_daily_batch(channel_ids: set[str] | None = None):
     print(f"  Channels: {len(channels)} | Videos/channel: {VIDEOS_PER_CHANNEL_PER_DAY} | Total: {total}\n")
 
     used_scripts = _load_used_scripts()
+    used_prompts = _load_used_prompts()
     results = []
 
     for channel_index, ch in enumerate(channels):
         for i in range(VIDEOS_PER_CHANNEL_PER_DAY):
             try:
                 clean_temp()
-                vid = process_video(ch, i, used_scripts)
+                vid = process_video(ch, i, used_scripts, used_prompts)
                 results.append({"ch": ch["name"], "vid": vid, "ok": True})
                 if i < VIDEOS_PER_CHANNEL_PER_DAY - 1:
                     time.sleep(30)
@@ -311,11 +385,11 @@ def run_daily_batch(channel_ids: set[str] | None = None):
     return bool(results) and ok == len(results)
 
 
-# ── 8-hour schedule loop ───────────────────────────────────────
+# ── 12-hour schedule loop ──────────────────────────────────────
 def run_scheduled():
-    """Run the pipeline every 8 hours."""
+    """Run the pipeline every 12 hours."""
     print(f"\n{'='*60}")
-    print(f"  YouTube Automation — 8-Hour Schedule")
+    print(f"  YouTube Automation — 12-Hour Schedule")
     print(f"  Upload interval: {UPLOAD_INTERVAL_SECONDS / 3600} hours")
     print(f"{'='*60}\n")
 
@@ -354,7 +428,8 @@ def prepare_meta_job_only() -> str:
         print(f"[MetaAI] Resuming job: {manifest['job_id']}")
     else:
         used_scripts = _load_used_scripts()
-        story = _generate_unique_script(channel["niche"], used_scripts)
+        used_prompts = _load_used_prompts()
+        story = _generate_unique_script(channel, used_scripts, used_prompts)
         manifest, job_dir = create_job(channel, story)
         print(f"[MetaAI] Created job: {manifest['job_id']}")
 

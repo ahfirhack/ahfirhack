@@ -250,8 +250,8 @@ def main():
     print("  2. git add .")
     print('  3. git commit -m "Add 4-channel YouTube bot"')
     print("  4. git push")
-    print("  5. Repo -> Actions -> Daily YouTube Upload -> Run workflow")
-    print("\nRuns daily at 3:00 UTC. 4 channels x 3 videos = 12 Shorts/day.\n")
+    print("  5. Repo -> Actions -> YouTube Upload (Every 12 Hours) -> Run workflow")
+    print("\nRuns at 00:00 and 12:00 UTC. 4 channels x 2 runs = up to 8 Shorts/day.\n")
 
 
 if __name__ == "__main__":

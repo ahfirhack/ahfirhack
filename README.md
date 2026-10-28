@@ -1,8 +1,8 @@
 # YouTube Shorts Automation — Setup Guide
 
 Fully automated YouTube Shorts pipeline.  
-**4 channels × 3 scheduled runs = up to 12 Shorts each day.**
-Voice, music, vertical video, and script/clip deduplication are included.
+**4 channels × 2 scheduled runs = up to 8 Shorts each day.**
+Vertical video plus script, prompt, title, and clip deduplication are included.
 
 ---
 
@@ -76,23 +76,24 @@ The workflow uses GitHub's hosted `ubuntu-latest` runner. Complete the one-time
 Meta browser-session export described below, add it as a repository secret, and
 then go to **Repo → Actions** and enable workflows.
 
-The workflow runs automatically every eight hours.
+The workflow runs automatically once every twelve hours (00:00 and 12:00 UTC).
 You can also trigger it manually: **Actions → daily_upload → Run workflow**
 
 ---
 
 ## Daily Output
 
-- 4 channels × 3 videos = **12 Shorts per day**
-- ~360 Shorts per month — fully automated
-- Dedup tracked in `used_scripts.json` + `used_videos.json` (committed back after each run)
+- 4 channels × 2 videos = **8 Shorts per day**
+- ~240 Shorts per month — fully automated
+- Dedup tracked in `used_scripts.json`, compact `used_prompts.json`, and
+  `used_videos.json` (committed back after each run)
 
 ---
 
 ## How It Works
 
 ```
-Script (Groq / Gemini / Claude, with offline fallbacks)
+Script (Groq / Nova / Gemini / Claude / Bedrock)
     ↓
 Channel 3: Meta AI Create in persistent Chrome → 3 × 10-second scenes
 Other channels: stock clips until their individual optimization pass
@@ -118,6 +119,13 @@ inside each video. Scene 1 is generated directly; scenes 2 and 3 also use the
 exact final frame of the preceding video. The assembler preserves the native
 Meta audio, normalizes the three clips to ten seconds each, and joins their
 audio and video timestamps without black, silent, or empty gap frames.
+
+Channel 3 tries every configured script provider until one returns a valid,
+unused story. Canned fallback stories are disabled. Compact hashes of the
+title, script, and complete prompt are stored in `used_prompts.json`; an exact
+title check against the authenticated YouTube channel runs before every upload.
+If no provider produces a unique script, the run fails without generating or
+uploading a duplicate.
 
 GitHub-hosted machines are fresh for every job, so the Meta login is restored
 from an encrypted GitHub Actions secret. Complete one local interactive login,
@@ -174,5 +182,5 @@ upload a seven-day diagnostic artifact.
 | **Token expired** | Re-run `python auth_tokens.py`, re-run `python encode_secrets.py`, update GitHub secret |
 | **YouTube quota exceeded** | YouTube allows ~6 uploads/day per project. Apply for higher quota at console.cloud.google.com |
 | **No video clips found** | Broaden the channel's `keywords` list in `config.py` |
-| **Script too short** | Expected — Groq returns short scripts sometimes. The fallback (72-word) script is used automatically |
+| **Channel 3 script generation failed** | Every configured provider failed, returned the wrong length, or repeated an existing prompt. Check the provider secrets; Channel 3 intentionally has no canned fallback. |
 | **Font missing on runner** | The GitHub Action installs `fonts-open-sans` and `fonts-dejavu-core` automatically |

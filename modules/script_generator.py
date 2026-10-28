@@ -158,25 +158,33 @@ def _get_fallback(niche: str) -> dict:
     return data
 
 
-def _build_prompt(niche: str) -> str:
+def _build_prompt(niche: str, uniqueness_seed: str = "") -> str:
     kids_history = _detect_niche_key(niche) == "kids_history"
     length_rule = (
         "60-70 words exactly, written for a 30-second narration."
         if kids_history else
         "80-90 words, written for a 30-40 second narration."
     )
+    json_length = "60-70" if kids_history else "80-90"
     kids_rules = """
 KIDS' HISTORY EPISODE RULES:
 - Tell one accurate, chronological story with three clear visual beats.
 - Use simple language for ages 7-12 and no graphic violence, fear, or adult themes.
-- Milo is the recurring ten-year-old time-travel guide. Write narration only; no quoted character dialogue and no lip-sync directions.
+- Milo is the recurring ten-year-old time-travel guide and the only speaker. Write the exact words Milo says; never add another narrator or character voice.
 - Group the narration into three concrete visual beats, one for each ten-second animated scene.
 - Never change Milo's appearance, clothing, age, or personality.
 """ if kids_history else ""
+    uniqueness_rule = (
+        f"UNIQUE EPISODE SEED: {uniqueness_seed}. Use this seed to choose a fresh "
+        "historical subject and angle. Never mention the seed in the output."
+        if uniqueness_seed else
+        "Choose a fresh subject and angle that is unlikely to repeat an earlier episode."
+    )
     return f"""You are a viral YouTube Shorts scriptwriter optimized for human-like VOICE narration.
 
 Niche: {niche}
 {kids_rules}
+{uniqueness_rule}
 
 VOICE-OPTIMIZED RULES:
 1. SCRIPT LENGTH: {length_rule}
@@ -188,7 +196,7 @@ VOICE-OPTIMIZED RULES:
    - For Kids' History: Start with an imaginative "What if...?" or a surprising factual question. Keep every detail accurate, age-appropriate, and free of graphic violence.
 4. STRUCTURE: No "Welcome back" or "Thanks for watching." Get straight to the point.
 5. THE LOOP: The final sentence must flow back into the first sentence to encourage re-watches.
-6. SENTENCE LENGTH: 5-12 words max. Short sentences create better rhythm in ElevenLabs.
+6. SENTENCE LENGTH: 5-12 words max. Short sentences keep generated speech clear.
 7. CRITICAL: Do NOT repeat the first sentence at the end. The loop should be thematic, not literal repetition.
 8. CRITICAL: End with "Like and Subscribe for more" as the final call-to-action.
 
@@ -197,7 +205,7 @@ GOOD: "person studying english book", "teacher writing on whiteboard", "student 
 BAD: "success", "mystery", "hacks"
 
 Respond ONLY with valid JSON (no markdown, no backticks):
-{{"title": "Searchable title under 60 chars", "script": "80-100 word voice-ready script ending with Like and Subscribe for more", "tags": ["tag1","tag2","tag3","tag4","tag5"], "search_query": "specific visual description"}}"""
+{{"title": "Searchable title under 60 chars", "script": "{json_length} word voice-ready script ending with Like and Subscribe for more", "tags": ["tag1","tag2","tag3","tag4","tag5"], "search_query": "specific visual description"}}"""
 
 
 def _parse_json(raw: str) -> dict:
@@ -391,8 +399,18 @@ def _post_process_script(script: str) -> str:
     return ". ".join(sentences).replace("..", ".").strip() + "."
 
 
-def generate_script(niche: str) -> dict:
-    prompt = _build_prompt(niche)
+class ScriptGenerationError(RuntimeError):
+    """No configured AI provider produced an acceptable unique script."""
+
+
+def generate_script(
+    niche: str,
+    *,
+    allow_fallback: bool = True,
+    reject_candidate=None,
+    uniqueness_seed: str = "",
+) -> dict:
+    prompt = _build_prompt(niche, uniqueness_seed)
     providers = [(_try_groq, "Groq"), (_try_nova, "Nova"), (_try_gemini, "Gemini"), (_try_claude, "Claude"), (_try_amazon, "Amazon")]
     niche_key = _detect_niche_key(niche)
     min_words, max_words = (60, 75) if niche_key == "kids_history" else (MIN_WORDS, MAX_WORDS)
@@ -417,12 +435,30 @@ def generate_script(niche: str) -> dict:
                 NICHE_SEARCH_HINTS.get(key, ["nature background video"]))
 
         if min_words <= wc <= max_words:
+            if reject_candidate is not None and reject_candidate(result):
+                print(f"[ScriptGen] {name}: duplicate prompt rejected -> next provider")
+                continue
             print(f"[ScriptGen] Accepted: {wc}w | {result['title'][:50]}")
             return result
 
         print(f"[ScriptGen] {name}: {wc}w out of range ({min_words}-{max_words}) -> next provider")
 
-    print("[ScriptGen] All providers failed -> fallback")
-    fallback = _get_fallback(niche)
-    fallback["script"] = _post_process_script(fallback["script"])
-    return fallback
+    if not allow_fallback:
+        raise ScriptGenerationError(
+            "Every configured AI provider failed, returned invalid output, or "
+            "repeated a used prompt. Canned fallback prompts are disabled."
+        )
+
+    key = _detect_niche_key(niche)
+    fallback_scripts = FALLBACK_SCRIPTS.get(key, FALLBACK_SCRIPTS["storytelling"])
+    for template in random.sample(fallback_scripts, len(fallback_scripts)):
+        fallback = dict(template)
+        fallback["script"] = _post_process_script(fallback["script"])
+        if reject_candidate is not None and reject_candidate(fallback):
+            continue
+        print("[ScriptGen] All providers failed -> unused fallback")
+        return fallback
+
+    raise ScriptGenerationError(
+        "All AI providers and fallback prompts were exhausted without a unique script."
+    )

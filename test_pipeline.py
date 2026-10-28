@@ -32,7 +32,10 @@ def test_channel(ch):
         manifest, meta_job_dir = active_meta_job
         data = manifest["story"]
     else:
-        data = generate_script(ch["niche"])
+        data = generate_script(
+            ch["niche"],
+            allow_fallback=not ch.get("strict_ai_prompts", False),
+        )
         manifest = meta_job_dir = None
     print(f"  Title: {data['title']} | {len(data['script'].split())}w | Query: {data['search_query']}")
 

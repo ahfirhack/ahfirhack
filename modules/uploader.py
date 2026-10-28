@@ -7,6 +7,7 @@ uploader.py (v3 — YouTube Algorithm Optimized 2026)
 
 import os
 import pickle
+import re
 import socket
 import time
 import httplib2
@@ -22,6 +23,49 @@ SCOPES = ["https://www.googleapis.com/auth/youtube.upload",
 AUTH_HTTP_TIMEOUT = 30
 UPLOAD_HTTP_TIMEOUT = 60
 MAX_UPLOAD_TIMEOUTS = 4
+
+
+def _normalized_title(title: str) -> str:
+    """Normalize titles so '#Shorts' or punctuation cannot hide a duplicate."""
+    without_shorts = re.sub(r"#?shorts?\b", " ", title, flags=re.IGNORECASE)
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", without_shorts.lower()).split())
+
+
+def _existing_upload_titles(youtube) -> set[str]:
+    """Read every title already uploaded to the authenticated channel."""
+    channel_response = youtube.channels().list(
+        part="contentDetails", mine=True, maxResults=1
+    ).execute()
+    items = channel_response.get("items", [])
+    if not items:
+        raise RuntimeError("Could not resolve the authenticated YouTube channel.")
+
+    uploads_playlist = (
+        items[0].get("contentDetails", {})
+        .get("relatedPlaylists", {})
+        .get("uploads")
+    )
+    if not uploads_playlist:
+        raise RuntimeError("Could not resolve the channel uploads playlist.")
+
+    titles: set[str] = set()
+    page_token = None
+    while True:
+        request = youtube.playlistItems().list(
+            part="snippet",
+            playlistId=uploads_playlist,
+            maxResults=50,
+            pageToken=page_token,
+        )
+        response = request.execute()
+        for item in response.get("items", []):
+            title = item.get("snippet", {}).get("title", "")
+            normalized = _normalized_title(title)
+            if normalized:
+                titles.add(normalized)
+        page_token = response.get("nextPageToken")
+        if not page_token:
+            return titles
 
 
 def _get_authenticated_service(client_secrets_file: str, token_file: str, channel_name: str):
@@ -112,6 +156,18 @@ def upload_video(
         channel_config["token_file"],
         channel_name,
     )
+
+    if channel_config.get("strict_upload_dedup", False):
+        normalized_upload_title = _normalized_title(title)
+        existing_titles = _existing_upload_titles(youtube)
+        if normalized_upload_title in existing_titles:
+            raise RuntimeError(
+                f"Duplicate YouTube title blocked for {channel_name}: {title}"
+            )
+        print(
+            f"[Uploader] Duplicate-title preflight passed against "
+            f"{len(existing_titles)} existing uploads"
+        )
 
     if not description:
         description = _build_seo_description(title, script, tags, channel_name)

@@ -8,8 +8,8 @@ NUM_VIDEOS = 1
 # Upload to YouTube after generation
 UPLOAD_TO_YOUTUBE = True
 
-# Upload every 8 hours (in seconds)
-UPLOAD_INTERVAL_HOURS = 8
+# Upload every 12 hours (in seconds)
+UPLOAD_INTERVAL_HOURS = 12
 UPLOAD_INTERVAL_SECONDS = UPLOAD_INTERVAL_HOURS * 3600
 
 # ═══════════════════════════════════════════════════════
@@ -41,6 +41,7 @@ FREESOUND_API_KEY     = os.getenv("FREESOUND_API_KEY", "")
 
 USED_VIDEOS_FILE   = "used_videos.json"
 USED_SCRIPTS_FILE  = "used_scripts.json"
+USED_PROMPTS_FILE  = "used_prompts.json"
 MUSIC_CACHE_DIR    = "music_cache"
 META_AI_JOBS_DIR = os.getenv("META_AI_JOBS_DIR", "meta_ai_jobs")
 META_AI_CREATE_URL = os.getenv("META_AI_CREATE_URL", "https://meta.ai/create")
@@ -156,6 +157,9 @@ CHANNELS = [
         "seamless_scenes": True,
         "native_clip_audio": True,
         "show_overlays": False,
+        "strict_ai_prompts": True,
+        "track_prompt_history": True,
+        "strict_upload_dedup": True,
     },
     {
         "id": "channel_4",

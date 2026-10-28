@@ -1,9 +1,9 @@
-name: Daily YouTube Upload (Every 8 Hours)
+name: YouTube Upload (Every 12 Hours)
 
 on:
   schedule:
-    # Run every 8 hours: 0:00, 8:00, 16:00 UTC
-    - cron: "0 */8 * * *"
+    # Run once every 12 hours: 00:00 and 12:00 UTC
+    - cron: "0 */12 * * *"
   workflow_dispatch:
     inputs:
       channel:
@@ -96,8 +96,9 @@ jobs:
         run: |
           [ -f used_videos.json ]  || echo '[]' > used_videos.json
           [ -f used_scripts.json ] || echo '[]' > used_scripts.json
+          [ -f used_prompts.json ] || echo '[]' > used_prompts.json
 
-      - name: Run pipeline (8-hour schedule handled by GitHub Actions)
+      - name: Run pipeline (12-hour schedule handled by GitHub Actions)
         env:
           NOVA_API_KEY:          ${{ secrets.NOVA_API_KEY }}
           GROQ_API_KEY:          ${{ secrets.GROQ_API_KEY }}
@@ -154,6 +155,6 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add used_videos.json used_scripts.json || true
+          git add used_videos.json used_scripts.json used_prompts.json || true
           git diff --staged --quiet || git commit -m "chore: update dedup state [skip ci]"
           git push || true
