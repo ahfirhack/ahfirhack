@@ -162,11 +162,11 @@ def _get_fallback(niche: str) -> dict:
 def _build_prompt(niche: str, uniqueness_seed: str = "") -> str:
     kids_history = _detect_niche_key(niche) == "kids_history"
     length_rule = (
-        "60-70 words exactly, written for a 30-second narration."
+        "50-65 words, written for a 30-second narration."
         if kids_history else
         "80-90 words, written for a 30-40 second narration."
     )
-    json_length = "60-70" if kids_history else "80-90"
+    json_length = "50-65" if kids_history else "80-90"
     kids_rules = """
 KIDS' HISTORY EPISODE RULES:
 - Tell one accurate, chronological story with three clear visual beats.
@@ -267,45 +267,53 @@ def _try_groq(prompt: str) -> dict | None:
     if not GROQ_API_KEY:
         return None
     try:
-        resp = requests.post(GROQ_URL,
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-            json={"model": "openai/gpt-oss-20b",
-                  "messages": [{"role": "user", "content": prompt}],
-                  "temperature": 0.9,
-                  "max_tokens": 500,
-                  "reasoning_effort": "low",
-                  "reasoning_format": "hidden",
-                  "response_format": {
-                      "type": "json_schema",
-                      "json_schema": {
-                          "name": "youtube_short_script",
-                          "strict": True,
-                          "schema": {
-                              "type": "object",
-                              "properties": {
-                                  "title": {"type": "string"},
-                                  "script": {"type": "string"},
-                                  "tags": {
-                                      "type": "array",
-                                      "items": {"type": "string"},
-                                  },
-                                  "search_query": {"type": "string"},
-                              },
-                              "required": [
-                                  "title", "script", "tags", "search_query"
-                              ],
-                              "additionalProperties": False,
-                          },
-                      },
-                  }},
-            timeout=(8, 20))  # (connect_timeout, read_timeout)
-        if resp.status_code == 429:
-            print("[ScriptGen] Groq rate-limited -> next")
-            return None
-        resp.raise_for_status()
-        data = _parse_json(resp.json()["choices"][0]["message"]["content"])
-        print("[ScriptGen] Script via Groq")
-        return data
+        strict_schema = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "youtube_short_script",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "script": {"type": "string"},
+                        "tags": {"type": "array", "items": {"type": "string"}},
+                        "search_query": {"type": "string"},
+                    },
+                    "required": ["title", "script", "tags", "search_query"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+        for response_format in (strict_schema, {"type": "json_object"}):
+            resp = requests.post(
+                GROQ_URL,
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "openai/gpt-oss-20b",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.9,
+                    "max_tokens": 500,
+                    "reasoning_effort": "low",
+                    "reasoning_format": "hidden",
+                    "response_format": response_format,
+                },
+                timeout=(8, 20),
+            )
+            if resp.status_code == 429:
+                print("[ScriptGen] Groq rate-limited -> next")
+                return None
+            if resp.status_code == 400 and response_format is strict_schema:
+                print("[ScriptGen] Groq strict schema retrying in JSON mode")
+                continue
+            resp.raise_for_status()
+            data = _parse_json(resp.json()["choices"][0]["message"]["content"])
+            print("[ScriptGen] Script via Groq")
+            return data
+        return None
     except Exception as e:
         _log_provider_error("Groq", e)
         return None
@@ -454,7 +462,7 @@ def generate_script(
     prompt = _build_prompt(niche, uniqueness_seed)
     providers = [(_try_groq, "Groq"), (_try_nova, "Nova"), (_try_gemini, "Gemini"), (_try_claude, "Claude"), (_try_amazon, "Amazon")]
     niche_key = _detect_niche_key(niche)
-    min_words, max_words = (60, 75) if niche_key == "kids_history" else (MIN_WORDS, MAX_WORDS)
+    min_words, max_words = (48, 70) if niche_key == "kids_history" else (MIN_WORDS, MAX_WORDS)
 
     for fn, name in providers:
         result = fn(prompt)
