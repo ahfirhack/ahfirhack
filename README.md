@@ -97,25 +97,27 @@ Script (Groq / Gemini / Claude, with offline fallbacks)
 Channel 3: Meta AI Create in persistent Chrome → 3 × 10-second scenes
 Other channels: stock clips until their individual optimization pass
     ↓
-Music (Jamendo API)
+Channel 3: preserve Meta video voice/audio; no added music
+Other channels: TTS voice + music
     ↓
-Assembly (FFmpeg — 1080×1920, CRF 18, 8 Mbps)
+Assembly (FFmpeg — 1440×2560 vertical)
     ↓
 Upload to YouTube as #Shorts
 ```
 
-Captions: 4 words per line, 2–3 lines on screen at a time.  
-Short scripts (≤24 words) stay on screen for the full video duration.
+Channels 1, 2, and 4 retain their caption overlays. Channel 3 adds no hook
+text, captions, end screen, external voiceover, or background music.
 
 ### Epic History Kids — automated Meta AI Create workflow
 
 Channel 3 uses Playwright to control `https://meta.ai/create` through a
 dedicated persistent Chromium profile. It does not use Muse Automation or a
 media-generation API key. Every video request includes the same permanent Milo
-character, style, and continuity prompt. Scene 1 is generated directly as a
-video; scenes 2 and 3 also use the exact final frame of the preceding video.
-The assembler normalizes the three clips to ten seconds each and joins them
-without black or empty gap frames.
+character, voice, style, and continuity prompt. Meta generates Milo's speech
+inside each video. Scene 1 is generated directly; scenes 2 and 3 also use the
+exact final frame of the preceding video. The assembler preserves the native
+Meta audio, normalizes the three clips to ten seconds each, and joins their
+audio and video timestamps without black, silent, or empty gap frames.
 
 GitHub-hosted machines are fresh for every job, so the Meta login is restored
 from an encrypted GitHub Actions secret. Complete one local interactive login,

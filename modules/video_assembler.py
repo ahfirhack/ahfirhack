@@ -11,6 +11,7 @@ import os
 import sys
 import subprocess
 import random
+import shutil
 import requests
 from config import TEMP_DIR, OUTPUT_DIR, FONT_BASE_DIR, PREFERRED_FONTS, WINDOWS_FONT_PATHS, END_SCREEN_DURATION, VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_BITRATE, VIDEO_CRF
 
@@ -133,6 +134,16 @@ def _dur(path):
         return float(r.stdout.strip())
     except ValueError:
         return 0.0
+
+
+def _has_audio(path: str) -> bool:
+    """Return True when a media file contains at least one audio stream."""
+    r = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a:0",
+         "-show_entries", "stream=codec_type", "-of", "csv=p=0", path],
+        capture_output=True, text=True,
+    )
+    return r.returncode == 0 and "audio" in r.stdout.lower()
 
 
 def _mix_audio(voice_path: str, music_path: str, output_path: str, music_volume: float = 0.3) -> str:
@@ -335,16 +346,22 @@ def _build_end_screen_filter(
     return f"drawbox=x=0:y=0:w={WIDTH}:h={HEIGHT}:color=black@0.8:t=fill:enable='{eb}'"
 
 
-def _concat_seamless_scenes(resized: list[str], total: float, output_path: str) -> None:
-    """Join equal-length scenes with normalized timestamps and no gap frames."""
+def _concat_seamless_scenes(
+    resized: list[str],
+    total: float,
+    output_path: str,
+    preserve_audio: bool = False,
+) -> None:
+    """Join equal-length scenes with normalized timestamps and no A/V gaps."""
     scene_duration = total / len(resized)
     inputs = []
     filters = []
-    labels = []
+    video_labels = []
+    audio_labels = []
     for index, path in enumerate(resized):
         inputs.extend(["-i", path])
-        label = f"v{index}"
-        labels.append(f"[{label}]")
+        video_label = f"v{index}"
+        video_labels.append(f"[{video_label}]")
         source_duration = _dur(path)
         # A browser generator may return a clip longer than the assigned scene
         # window. Keep its newest final segment so earlier action is not repeated.
@@ -357,20 +374,48 @@ def _concat_seamless_scenes(resized: list[str], total: float, output_path: str) 
             f"[{index}:v]fps=30,"
             f"tpad=stop_mode=clone:stop_duration={scene_duration:.3f},"
             f"trim=start={trim_start:.3f}:duration={scene_duration:.3f},"
-            f"setpts=PTS-STARTPTS[{label}]"
+            f"setpts=PTS-STARTPTS[{video_label}]"
         )
+        if preserve_audio:
+            if not _has_audio(path):
+                raise RuntimeError(
+                    f"Meta AI scene has no native audio stream: {path}"
+                )
+            audio_label = f"a{index}"
+            audio_labels.append(f"[{audio_label}]")
+            filters.append(
+                f"[{index}:a]atrim=start={trim_start:.3f}:duration={scene_duration:.3f},"
+                f"asetpts=PTS-STARTPTS,aresample=48000:async=1:first_pts=0,"
+                f"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+                f"apad=pad_dur={scene_duration:.3f},"
+                f"atrim=duration={scene_duration:.3f}[{audio_label}]"
+            )
 
-    filters.append(
-        "".join(labels) + f"concat=n={len(resized)}:v=1:a=0[outv]"
-    )
+    if preserve_audio:
+        interleaved = "".join(
+            video + audio for video, audio in zip(video_labels, audio_labels)
+        )
+        filters.append(
+            interleaved + f"concat=n={len(resized)}:v=1:a=1[outv][outa]"
+        )
+        maps_and_codecs = [
+            "-map", "[outv]", "-map", "[outa]",
+            "-c:v", "libx264", "-preset", "medium", "-crf", str(VIDEO_CRF),
+            "-c:a", "aac", "-b:a", "320k",
+        ]
+    else:
+        filters.append(
+            "".join(video_labels) + f"concat=n={len(resized)}:v=1:a=0[outv]"
+        )
+        maps_and_codecs = [
+            "-map", "[outv]", "-an",
+            "-c:v", "libx264", "-preset", "medium", "-crf", str(VIDEO_CRF),
+        ]
+
     _ffmpeg(
         inputs + [
             "-filter_complex", ";".join(filters),
-            "-map", "[outv]",
-            "-an",
-            "-c:v", "libx264",
-            "-preset", "medium",
-            "-crf", str(VIDEO_CRF),
+        ] + maps_and_codecs + [
             "-pix_fmt", "yuv420p",
             "-r", "30",
             "-t", f"{total:.3f}",
@@ -390,36 +435,61 @@ def assemble_video(
     target_duration=None,
     end_screen_duration=None,
     seamless_scenes=False,
+    native_clip_audio=False,
+    show_overlays=True,
 ) -> str:
     """
     Assemble video with clips and audio.
     If music_path is provided, mixes voice (audio_path) with background music.
+    If native_clip_audio is enabled, keeps each generated clip's own audio and
+    refuses external voice/music replacement.
     """
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(TEMP_DIR, exist_ok=True)
 
-    fb  = _resolve_font(True)
-    fr  = _resolve_font(False)
     out = os.path.join(OUTPUT_DIR, output_filename)
 
-    # Mix voice + music if music is provided
-    if music_path and os.path.exists(music_path):
-        mixed_audio = os.path.join(TEMP_DIR, "mixed_audio.mp3")
-        audio_path = _mix_audio(audio_path, music_path, mixed_audio, music_volume=0.25)
-
-    # Escape audio path for Windows
-    if sys.platform == "win32":
-        audio_path = audio_path.replace("\\", "/").replace(":", "\\:", 1)
-
-    a_dur = _dur(audio_path)
     end_duration = END_SCREEN_DURATION if end_screen_duration is None else float(end_screen_duration)
-    total = float(target_duration) if target_duration else a_dur + end_duration
+    ext_audio = None
+    if native_clip_audio:
+        if audio_path or music_path:
+            raise RuntimeError(
+                "Native Meta audio mode cannot be combined with external voice or music."
+            )
+        if not seamless_scenes:
+            raise RuntimeError("Native Meta audio requires seamless scene assembly.")
+        missing_audio = [path for path in clip_paths if not _has_audio(path)]
+        if missing_audio:
+            raise RuntimeError(
+                "One or more Meta AI scenes have no native audio; refusing to "
+                "publish a silent or partly silent episode: " + ", ".join(missing_audio)
+            )
+        total = (
+            float(target_duration)
+            if target_duration
+            else sum(_dur(path) for path in clip_paths)
+        )
+        print(f"[Assembler] Preserving Meta AI native voice across {total:.1f}s")
+    else:
+        if not audio_path:
+            raise RuntimeError("External audio path is required when native audio is disabled.")
+        # Mix voice + music if music is provided
+        if music_path and os.path.exists(music_path):
+            mixed_audio = os.path.join(TEMP_DIR, "mixed_audio.mp3")
+            audio_path = _mix_audio(audio_path, music_path, mixed_audio, music_volume=0.25)
 
-    # Pad or trim audio to the exact final duration.
-    ext_audio = os.path.join(TEMP_DIR, "audio_ext.mp3")
-    _ffmpeg(["-i", audio_path, "-af", f"apad=pad_dur={max(total - a_dur, 0):.3f}",
-             "-t", str(total), ext_audio], "ext_audio")
-    print(f"[Assembler] {a_dur:.1f}s audio -> exact {total:.1f}s video")
+        # Escape audio path for Windows
+        if sys.platform == "win32":
+            audio_path = audio_path.replace("\\", "/").replace(":", "\\:", 1)
+
+        a_dur = _dur(audio_path)
+        total = float(target_duration) if target_duration else a_dur + end_duration
+
+        # Pad or trim audio to the exact final duration.
+        ext_audio = os.path.join(TEMP_DIR, "audio_ext.mp3")
+        _ffmpeg(["-i", audio_path, "-af", f"apad=pad_dur={max(total - a_dur, 0):.3f}",
+                 "-t", str(total), ext_audio], "ext_audio")
+        print(f"[Assembler] {a_dur:.1f}s audio -> exact {total:.1f}s video")
 
     # Resize clips to Full HD portrait
     resized = []
@@ -462,7 +532,9 @@ def assemble_video(
     cr = os.path.join(TEMP_DIR, "cr.mp4")
     ct = os.path.join(TEMP_DIR, "ct.mp4")
     if seamless_scenes:
-        _concat_seamless_scenes(resized, total, ct)
+        _concat_seamless_scenes(
+            resized, total, ct, preserve_audio=native_clip_audio
+        )
     else:
         with open(cl, "w") as f:
             for rp in used:
@@ -470,20 +542,35 @@ def assemble_video(
         _ffmpeg(["-f", "concat", "-safe", "0", "-i", cl, "-c", "copy", cr], "concat")
         _ffmpeg(["-i", cr, "-t", str(total), "-c", "copy", ct], "trim")
 
-    # Build combined overlay: hook → captions → end screen
-    hook_f    = _build_hook_filter(fb)
-    caption_f = _build_caption_filter(script, total, fb, end_duration)
-    end_f     = _build_end_screen_filter(total, fb, fr, channel_name, end_duration)
-    parts     = [p for p in [hook_f, caption_f, end_f] if p]
-    vf        = ",".join(parts)
+    # Channel 3 uses clean Meta frames: no hook, captions, or end screen.
+    vf = ""
+    if show_overlays:
+        fb = _resolve_font(True)
+        fr = _resolve_font(False)
+        hook_f = _build_hook_filter(fb)
+        caption_f = _build_caption_filter(script, total, fb, end_duration)
+        end_f = _build_end_screen_filter(total, fb, fr, channel_name, end_duration)
+        parts = [p for p in [hook_f, caption_f, end_f] if p]
+        vf = ",".join(parts)
 
     print(f"[Assembler] Rendering 2K {WIDTH}×{HEIGHT} (9:16) at {VIDEO_BITRATE/1000} Mbps CRF {VIDEO_CRF}...")
-    _ffmpeg(["-i", ct, "-i", ext_audio, "-vf", vf,
-             "-map", "0:v:0", "-map", "1:a:0",
-             "-c:v", "libx264", "-preset", "medium", "-crf", str(VIDEO_CRF), "-b:v", str(VIDEO_BITRATE),
-             "-c:a", "aac", "-b:a", "320k",
-             "-pix_fmt", "yuv420p",
-             "-t", str(total), "-r", "30", out], "render")
+    if native_clip_audio and not vf:
+        # The seamless concat is already normalized and encoded. Copying it
+        # avoids another generation boundary and preserves its continuous A/V.
+        shutil.copyfile(ct, out)
+    else:
+        render_inputs = ["-i", ct]
+        audio_map = ["-map", "0:a:0"]
+        if not native_clip_audio:
+            render_inputs.extend(["-i", ext_audio])
+            audio_map = ["-map", "1:a:0"]
+        video_filter = ["-vf", vf] if vf else []
+        _ffmpeg(render_inputs + video_filter +
+                ["-map", "0:v:0"] + audio_map +
+                ["-c:v", "libx264", "-preset", "medium", "-crf", str(VIDEO_CRF),
+                 "-b:v", str(VIDEO_BITRATE), "-c:a", "aac", "-b:a", "320k",
+                 "-pix_fmt", "yuv420p", "-t", str(total), "-r", "30", out],
+                "render")
 
     print(f"[Assembler] Done -> {out} ({total:.0f}s)")
     return out

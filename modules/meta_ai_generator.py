@@ -47,17 +47,25 @@ materials, gentle depth of field, and smooth feature-film-quality motion. The
 look must be original and must not copy a studio, franchise, copyrighted
 character, or existing film. Vertical 9:16 composition, kid-safe."""
 
+VOICE_BIBLE = """Milo has one permanent voice in every scene: a warm, bright,
+friendly ten-year-old boy speaking clear American English with an energetic,
+curious storytelling rhythm. Keep the exact same speaker identity, accent,
+pitch, timbre, volume, pacing, and recording quality in all scenes. Milo is the
+only speaker. Generate his synchronized spoken voice as native audio inside
+the video; never use a separate narrator."""
+
 CONTINUITY_BIBLE = """Keep Milo's identity, wardrobe, proportions, render
 style, color palette, historical setting, camera direction, and screen position
 identical. Continue naturally from the supplied prior final frame when one is
-attached. No fades, dissolves, black frames, title cards, captions, readable
-text, logos, dialogue, or lip-sync. Milo is a silent visual guide because one
-locked narration voice is added later."""
+attached. Keep Milo's voice and the background ambience sonically continuous.
+No fades, dissolves, black frames, title cards, captions, readable text, logos,
+silent lead-in, silent ending, audio fade, intro sound, or outro sound."""
 
 NEGATIVE_PROMPT = """No character redesign, costume change, age change, face
 change, hairstyle change, duplicate Milo, extra limbs or fingers, modern
 objects, weapons, gore, frightening imagery, readable text, subtitles, logos,
-black frames, blank frames, fades, dissolves, or camera resets."""
+black frames, blank frames, fades, dissolves, camera resets, adult narrator,
+second speaker, voice change, muted audio, or background music."""
 
 
 class MetaAIAutomationError(RuntimeError):
@@ -148,9 +156,15 @@ def _scene_prompt(index: int, narration: str, topic: str) -> str:
         f"""Create a VIDEO, not a still image. Scene {index} of
         {META_SCENE_COUNT} for one continuous Epic History Kids episode about
         {topic}. Exactly {META_SCENE_DURATION} seconds, vertical 9:16, smooth
-        natural motion, no embedded narration and no music. {attachment}
+        natural motion, with native synchronized speech and historical ambience.
+        Make this feel like one uninterrupted 30-second video, not a separate
+        clip. {attachment}
         CHARACTER LOCK: {CHARACTER_BIBLE} STYLE LOCK: {STYLE_BIBLE}
-        CONTINUITY LOCK: {CONTINUITY_BIBLE} VISUAL STORY BEAT: {narration}
+        VOICE LOCK: {VOICE_BIBLE} CONTINUITY LOCK: {CONTINUITY_BIBLE}
+        MILO'S EXACT SPOKEN LINE: {narration} Match Milo's mouth naturally to
+        that line. Begin the action and native ambience on the first frame and
+        continue through the final frame with no silent padding. VISUAL STORY
+        BEAT: {narration}
         ENDING HANDOFF: {ending} NEGATIVE REQUIREMENTS: {NEGATIVE_PROMPT}""".split()
     )
 
@@ -160,8 +174,9 @@ def _render_prompt_markdown(manifest: dict) -> str:
         f"# Meta AI automated render pack: {manifest['story']['title']}", "",
         "This pack is consumed automatically by the Playwright browser runner.",
         "Every scene receives the same permanent Milo character/style prompt.",
+        "Every scene also receives the same permanent Milo native-audio voice lock.",
         "Scenes 2 and 3 also receive the prior video's final frame for visual",
-        "continuity. All three requested outputs are videos.",
+        "continuity. All three requested outputs are videos with native audio.",
     ]
     for scene in manifest["scenes"]:
         lines.extend([
@@ -220,6 +235,8 @@ def create_job(channel: dict, story: dict) -> tuple[dict, Path]:
         "target_duration_seconds": META_SCENE_COUNT * META_SCENE_DURATION,
         "character_bible": CHARACTER_BIBLE,
         "style_bible": STYLE_BIBLE,
+        "voice_bible": VOICE_BIBLE,
+        "native_audio": True,
         "story": story,
         "scenes": scenes,
     }

@@ -21,9 +21,11 @@ def test_channel(ch):
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     sn = ch["id"].replace(" ", "_")
     uv = ch.get("use_voice", True)
+    use_music = ch.get("use_music", True)
+    native_audio = ch.get("native_clip_audio", False)
     mm = ch.get("music_mood", "relaxing")
 
-    print(f"\n  TEST: {ch['name']} | Voice: {uv} | Music: {mm}\n")
+    print(f"\n  TEST: {ch['name']} | Voice: {uv} | Music: {use_music}\n")
 
     active_meta_job = find_active_job(ch["id"]) if ch.get("media_source") == "meta_ai_browser" else None
     if active_meta_job:
@@ -47,8 +49,10 @@ def test_channel(ch):
         )
 
     # Generate background music
-    music_path = os.path.join(TEMP_DIR, f"{sn}_{ts}_music.mp3")
-    generate_background_music(mm, SHORT_DURATION_TARGET, music_path)
+    music_path = None
+    if use_music:
+        music_path = os.path.join(TEMP_DIR, f"{sn}_{ts}_music.mp3")
+        generate_background_music(mm, SHORT_DURATION_TARGET, music_path)
 
     # Fetch clips
     if ch.get("media_source") == "meta_ai_browser":
@@ -60,7 +64,7 @@ def test_channel(ch):
                                   script=data["script"], niche_keywords=ch.get("keywords", []))
 
     # Assemble video with voice + music
-    audio_for_video = voice_path if voice_path else music_path
+    audio_for_video = None if native_audio else (voice_path if voice_path else music_path)
     path = assemble_video(
         clip_paths=clips,
         audio_path=audio_for_video,
@@ -71,6 +75,8 @@ def test_channel(ch):
         target_duration=ch.get("target_duration"),
         end_screen_duration=ch.get("end_screen_duration"),
         seamless_scenes=ch.get("seamless_scenes", False),
+        native_clip_audio=native_audio,
+        show_overlays=ch.get("show_overlays", True),
     )
     print(f"\n  OUTPUT: {path}\n")
     return path

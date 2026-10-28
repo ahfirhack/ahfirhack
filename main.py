@@ -148,12 +148,15 @@ def process_video(channel: dict, video_index: int, used_scripts: set):
     niche        = channel["niche"]
     music_mood   = channel.get("music_mood", "relaxing")
     use_voice    = channel.get("use_voice", True)
+    use_music    = channel.get("use_music", True)
+    native_audio = channel.get("native_clip_audio", False)
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_name = channel["id"].replace(" ", "_")
 
     print(f"\n{'='*60}")
-    print(f"  {channel_name} | Voice: {use_voice} | Music: {music_mood}")
+    audio_mode = "Meta native" if native_audio else ("TTS" if use_voice else "music")
+    print(f"  {channel_name} | Audio: {audio_mode} | Music: {use_music}")
     print(f"  Video {video_index + 1}/{VIDEOS_PER_CHANNEL_PER_DAY}")
     print(f"{'='*60}\n")
 
@@ -201,13 +204,19 @@ def process_video(channel: dict, video_index: int, used_scripts: set):
             strict_voice=channel.get("strict_voice", False),
             voice_provider=channel.get("voice_provider"),
         )
+    elif native_audio:
+        print("[2/6] Voiceover skipped (using Meta AI native character voice)")
     else:
         print("[2/6] Voiceover skipped (music only)")
 
     # 3. Background music
-    print("[3/6] Music...")
-    music_path = os.path.join(TEMP_DIR, f"{safe_name}_{timestamp}_music.mp3")
-    generate_background_music(music_mood, SHORT_DURATION_TARGET, music_path)
+    music_path = None
+    if use_music:
+        print("[3/6] Music...")
+        music_path = os.path.join(TEMP_DIR, f"{safe_name}_{timestamp}_music.mp3")
+        generate_background_music(music_mood, SHORT_DURATION_TARGET, music_path)
+    else:
+        print("[3/6] Music skipped (using Meta AI native audio)")
 
     # 4. Footage
     if media_source == "meta_ai_browser":
@@ -226,7 +235,7 @@ def process_video(channel: dict, video_index: int, used_scripts: set):
     fname      = f"{safe_name}_{timestamp}.mp4"
 
     # Use voice if available, otherwise use music only
-    audio_for_video = voice_path if voice_path else music_path
+    audio_for_video = None if native_audio else (voice_path if voice_path else music_path)
 
     video_path = assemble_video(
         clip_paths=clips,
@@ -238,6 +247,8 @@ def process_video(channel: dict, video_index: int, used_scripts: set):
         target_duration=channel.get("target_duration"),
         end_screen_duration=channel.get("end_screen_duration"),
         seamless_scenes=channel.get("seamless_scenes", False),
+        native_clip_audio=native_audio,
+        show_overlays=channel.get("show_overlays", True),
     )
 
     # 6. Upload as YouTube Short
