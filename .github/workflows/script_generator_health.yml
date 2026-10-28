@@ -5,6 +5,18 @@ on:
     # Detect retired models, provider outages, and schema drift every day.
     - cron: "17 9 * * *"
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Channel health check (scheduled runs rotate 1, 2, 4)
+        required: true
+        default: rotating
+        type: choice
+        options:
+          - rotating
+          - "1"
+          - "2"
+          - "4"
+          - all
 
 permissions:
   contents: read
@@ -42,4 +54,5 @@ jobs:
           AMAZON_ACCESS_KEY: ${{ secrets.AMAZON_ACCESS_KEY }}
           AMAZON_SECRET_KEY: ${{ secrets.AMAZON_SECRET_KEY }}
           AMAZON_REGION: ${{ secrets.AMAZON_REGION || 'us-east-1' }}
+          HEALTH_CHANNEL: ${{ inputs.channel || 'rotating' }}
         run: python -u check_script_generators.py

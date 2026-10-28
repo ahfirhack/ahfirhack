@@ -129,8 +129,9 @@ models at runtime where catalogs are available. Its failover chain is Groq,
 Hugging Face Router, Mistral, NVIDIA NIM, Cloudflare Workers AI, OpenRouter
 Free, Cerebras, Cohere, Gemini, Nova, Claude, and Amazon Bedrock. Missing keys
 are skipped automatically. A daily `AI Script Generator Health` workflow
-validates fresh scripts and packaging for Channels 1, 2, and 4 so retired
-models or provider schema changes are detected before an upload run.
+rotates through Channels 1, 2, and 4 (one per day to respect free-tier limits)
+and validates a fresh script and its packaging. Manual runs can target a
+specific channel or all three.
 
 ### Epic History Kids — automated Meta AI Create workflow
 

@@ -8,6 +8,8 @@ non-Meta channel without writing dedup state or uploading a video.
 from __future__ import annotations
 
 import datetime as dt
+import os
+import time
 
 from config import CHANNELS
 from modules.script_generator import (
@@ -19,38 +21,61 @@ from modules.script_generator import (
 )
 
 
-CHANNEL_IDS = {"channel_1", "channel_2", "channel_4"}
+CHANNEL_IDS = ("channel_1", "channel_2", "channel_4")
+
+
+def _selected_channel_ids(today: dt.date) -> set[str]:
+    requested = os.getenv("HEALTH_CHANNEL", "rotating").strip().lower()
+    if requested in {"all", "1,2,4"}:
+        return set(CHANNEL_IDS)
+    if requested in {"1", "2", "4"}:
+        return {f"channel_{requested}"}
+    # Scheduled checks rotate to respect free-provider request/token limits.
+    return {CHANNEL_IDS[today.toordinal() % len(CHANNEL_IDS)]}
 
 
 def main() -> None:
-    seed_date = dt.datetime.now(dt.timezone.utc).date().isoformat()
+    today = dt.datetime.now(dt.timezone.utc).date()
+    seed_date = today.isoformat()
+    selected = _selected_channel_ids(today)
+    print(f"[Health] Selected: {', '.join(sorted(selected))}")
     failures: list[str] = []
     for channel in CHANNELS:
-        if channel["id"] not in CHANNEL_IDS:
+        if channel["id"] not in selected:
             continue
-        try:
-            result = generate_script(
-                channel["niche"],
-                allow_fallback=False,
-                uniqueness_seed=f"health-{channel['id']}-{seed_date}",
-            )
-            niche_key = _detect_niche_key(channel["niche"])
-            if _reject_generic_title(result["title"], niche_key):
-                raise RuntimeError("weak or generic title escaped validation")
-            if not _valid_visual_packaging(result, niche_key):
-                raise RuntimeError("visual/hook packaging is incomplete")
-            print(
-                f"[Health] {channel['id']} OK: "
-                f"{len(result['script'].split())} words, "
-                f"{len(result['visual_queries'])} visual beats"
-            )
-        except (ScriptGenerationError, KeyError, RuntimeError) as error:
-            failures.append(f"{channel['id']}: {error}")
-            print(f"[Health] {channel['id']} FAILED: {error}")
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                result = generate_script(
+                    channel["niche"],
+                    allow_fallback=False,
+                    uniqueness_seed=(
+                        f"health-{channel['id']}-{seed_date}-{attempt}"
+                    ),
+                )
+                niche_key = _detect_niche_key(channel["niche"])
+                if _reject_generic_title(result["title"], niche_key):
+                    raise RuntimeError("weak or generic title escaped validation")
+                if not _valid_visual_packaging(result, niche_key):
+                    raise RuntimeError("visual/hook packaging is incomplete")
+                print(
+                    f"[Health] {channel['id']} OK: "
+                    f"{len(result['script'].split())} words, "
+                    f"{len(result['visual_queries'])} visual beats"
+                )
+                last_error = None
+                break
+            except (ScriptGenerationError, KeyError, RuntimeError) as error:
+                last_error = error
+                print(f"[Health] {channel['id']} attempt {attempt}/3 failed: {error}")
+                if attempt < 3:
+                    time.sleep(20)
+        if last_error is not None:
+            failures.append(f"{channel['id']}: {last_error}")
 
     if failures:
         raise SystemExit("AI script health check failed: " + " | ".join(failures))
-    print("[Health] Live model discovery and script validation passed for channels 1, 2, and 4")
+    print("[Health] Live model discovery and strict script validation passed")
 
 
 if __name__ == "__main__":
