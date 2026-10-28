@@ -146,6 +146,7 @@ def upload_video(
     description: str = "",
     script: str = "",
     source_url: str = "",
+    media_credits: list[str] | None = None,
 ) -> str:
     """Uploads video with SEO-optimized metadata."""
     channel_name = channel_config["name"]
@@ -172,11 +173,20 @@ def upload_video(
 
     if not description:
         description = _build_seo_description(title, script, tags, channel_name)
+    suffix_sections = []
     if source_url:
-        description = (
-            description.rstrip()
-            + f"\n\nPublic record used for this episode:\n{source_url}\n"
-        )[:5000]
+        suffix_sections.append(f"Public record used for this episode:\n{source_url}")
+    credits = list(dict.fromkeys(
+        credit.strip() for credit in (media_credits or []) if credit.strip()
+    ))
+    if credits:
+        suffix_sections.append(
+            "Media sources and credits:\n" + "\n".join(f"- {credit}" for credit in credits)
+        )
+    if suffix_sections:
+        suffix = "\n\n" + "\n\n".join(suffix_sections) + "\n"
+        available = max(0, 5000 - len(suffix))
+        description = description.rstrip()[:available].rstrip() + suffix
 
     # Clean tags: remove #, deduplicate, add algorithmic boosters
     clean_tags = []

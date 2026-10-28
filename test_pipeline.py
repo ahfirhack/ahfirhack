@@ -66,7 +66,8 @@ def test_channel(ch):
             manifest, meta_job_dir = create_job(ch, data)
         clips = ensure_rendered_clips(manifest, meta_job_dir)
     else:
-        clips = fetch_video_clips(query=data["search_query"], num_clips=6,
+        clip_count = 3 if ch.get("align_visual_beats", False) else 6
+        clips = fetch_video_clips(query=data["search_query"], num_clips=clip_count,
                                   script=data["script"], niche_keywords=ch.get("keywords", []),
                                   visual_queries=data.get("visual_queries", []))
 
@@ -90,6 +91,7 @@ def test_channel(ch):
         hook_accent=data.get("hook_accent", ""),
         evidence_label=data.get("evidence_label", ""),
         require_visuals=ch.get("require_visuals", False),
+        align_visual_beats=ch.get("align_visual_beats", False),
     )
     print(f"\n  OUTPUT: {path}\n")
     return path

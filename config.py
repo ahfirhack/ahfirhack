@@ -141,6 +141,7 @@ CHANNELS = [
         "token_file": "credentials/channel1_token.json",
         "use_voice": True,
         "require_visuals": True,
+        "align_visual_beats": True,
         "music_mood": "suspense",
         "category_id": "28",
         "hook_style": "evidence_first",
@@ -169,6 +170,7 @@ CHANNELS = [
         "token_file": "credentials/channel2_token.json",
         "use_voice": True,
         "require_visuals": True,
+        "align_visual_beats": True,
         "music_mood": "mysterious",
         "category_id": "24",
         "hook_style": "climax_first",
@@ -223,6 +225,7 @@ CHANNELS = [
         "token_file": "credentials/channel4_token.json",
         "use_voice": True,
         "require_visuals": True,
+        "align_visual_beats": True,
         "music_mood": "cinematic",
         "category_id": "27",
         "hook_style": "pain_point", # Start with a common modern struggle (e.g., burnout)

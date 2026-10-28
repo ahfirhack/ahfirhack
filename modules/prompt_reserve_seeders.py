@@ -1,23 +1,29 @@
 """Deterministic offline prompt packs for non-kids channel reserves.
 
-StoryFuse and Stoic Reset each receive 2,048 structurally unique prompts. The
-technology true-crime reserve deliberately stays limited to the small set of
-public-record prompts verified in ``script_generator``; manufacturing thousands
-of unverified crime claims would undermine the channel's factual safeguards.
+Each pack contains 2,048 distinct prompts. Channel 1 is built only from
+packaged Justice Department public records, preserving each source URL and
+legal posture instead of manufacturing unverified crime claims.
 """
 
 from __future__ import annotations
 
+import gzip
 import hashlib
+import json
+import re
+from pathlib import Path
 
 
 SEED_VERSIONS = {
-    "channel_1": "silicon-crime-public-record-v1",
+    "channel_1": "silicon-crime-doj-public-record-v2",
     "channel_2": "storyfuse-retention-v1",
     "channel_4": "stoic-reset-practical-v2",
 }
 
 CTA = "Like and Subscribe for more."
+TECH_CASES_PATH = (
+    Path(__file__).resolve().parents[1] / "data" / "channel1_official_cases.json.gz"
+)
 
 
 def _fingerprint(channel_id: str, title: str, script: str) -> str:
@@ -44,6 +50,158 @@ def _fit_script(parts: list[str], *, minimum: int, maximum: int) -> str:
             f"Reserve script is too long ({len(script.split())}>{maximum}): {script}"
         )
     return script
+
+
+def _short_title(value: str, maximum: int = 58) -> str:
+    title = " ".join(value.replace("<br />", " ").split()).strip(" .")
+    if len(title) <= maximum:
+        return title
+    words = title.split()
+    kept: list[str] = []
+    for word in words:
+        if len(" ".join(kept + [word])) > maximum:
+            break
+        kept.append(word)
+    trailing = {"a", "an", "and", "for", "in", "of", "role", "the", "to", "with"}
+    while kept and kept[-1].lower().strip(" ,:;-") in trailing:
+        kept.pop()
+    return " ".join(kept).rstrip(" ,:;-")
+
+
+def _summary_excerpt(summary: str, word_limit: int) -> str:
+    sentences = re.split(r"(?<=[.!?])\s+", summary.strip())
+    chosen: list[str] = []
+    count = 0
+    for sentence in sentences:
+        words = sentence.split()
+        if count + len(words) > word_limit:
+            break
+        chosen.append(sentence)
+        count += len(words)
+    if chosen:
+        return " ".join(chosen)
+    words = summary.split()[:word_limit]
+    # Prefer ending at a clause boundary instead of cutting a factual sentence
+    # in the middle when the official teaser is unusually long.
+    joined = " ".join(words)
+    clause = max(joined.rfind(","), joined.rfind(";"), joined.rfind(":"))
+    if clause >= len(joined) // 2:
+        joined = joined[:clause]
+    return joined.rstrip(" ,;:") + "."
+
+
+def _tech_status_note(status: str) -> str:
+    if status in {"CHARGED", "ARRESTED", "CIVIL ACTION"}:
+        return (
+            "The record describes allegations, not a conviction; the accused "
+            "is presumed innocent unless proven guilty."
+        )
+    return "The legal outcome stated here follows the official record exactly."
+
+
+def _tech_search_terms(title: str) -> str:
+    stop = {
+        "a", "an", "and", "as", "at", "by", "for", "from", "in", "of",
+        "on", "the", "to", "with", "charged", "convicted", "sentenced",
+        "pleads", "pleaded", "guilty", "former", "federal", "man", "woman",
+    }
+    words = [
+        word.lower() for word in re.findall(r"[A-Za-z0-9$-]+", title)
+        if word.lower() not in stop and len(word) > 2
+    ]
+    return " ".join(words[:8]) or "technology corporate case evidence"
+
+
+def _tech_prompts() -> list[dict]:
+    if not TECH_CASES_PATH.exists():
+        raise RuntimeError(
+            f"Missing packaged DOJ source records: {TECH_CASES_PATH}. "
+            "Run scripts/build_channel1_official_cases.py."
+        )
+    with gzip.open(TECH_CASES_PATH, "rt", encoding="utf-8") as handle:
+        cases = json.load(handle)
+    if len(cases) < 2001:
+        raise RuntimeError("Channel 1 requires more than 2,000 official source records.")
+
+    prompts: list[dict] = []
+    titles: set[str] = set()
+    for index, case in enumerate(cases):
+        title = _short_title(case["title"])
+        if title.casefold() in titles:
+            suffix = f" ({case['year']})"
+            title = _short_title(case["title"], 58 - len(suffix)) + suffix
+        if title.casefold() in titles:
+            suffix = f" // {index + 1}"
+            title = _short_title(case["title"], 58 - len(suffix)) + suffix
+        titles.add(title.casefold())
+
+        status_note = _tech_status_note(case["status"])
+        fixed = (
+            f"{title}. A {case['year']} Justice Department public record reports: "
+            f" {status_note} The original public record is linked for verification. "
+            f"{CTA}"
+        )
+        # Reserve four words for replacing relative dates such as "today" with
+        # durable wording such as "on that date".
+        available_summary_words = max(18, 84 - len(fixed.split()))
+        excerpt = _summary_excerpt(case["summary"], available_summary_words)
+        excerpt = re.sub(r"\btoday\b", "on that date", excerpt, flags=re.IGNORECASE)
+        excerpt = re.sub(r"\byesterday\b", "the previous day", excerpt, flags=re.IGNORECASE)
+        script = (
+            f"{title}. A {case['year']} Justice Department public record reports: "
+            f"{excerpt} {status_note} The original public record is linked for "
+            f"verification. {CTA}"
+        )
+        tech_pads = (
+            "This keeps the case grounded in documented evidence rather than rumor.",
+            "The cited release supplies the dates and legal posture used in this episode.",
+            "No additional accusation is added beyond that public record.",
+        )
+        pad_index = 0
+        while len(script.split()) < 68:
+            script = script.replace(
+                f" {CTA}", f" {tech_pads[pad_index]} {CTA}",
+            )
+            pad_index += 1
+        if len(script.split()) > 90:
+            raise RuntimeError(
+                f"Channel 1 reserve script exceeds 90 words: {len(script.split())}"
+            )
+
+        search_terms = _tech_search_terms(case["title"])
+        overlay_words = re.findall(r"[A-Za-z0-9$-]+", title.upper())[:8]
+        while len(overlay_words) < 4:
+            overlay_words.append(("CASE", "FILE", "EVIDENCE", "FOUND")[len(overlay_words)])
+        amounts = re.findall(
+            r"\$[0-9][0-9.,]*(?:\s*(?:MILLION|BILLION|M|B))?",
+            f"{case['title']} {case['summary']}",
+            flags=re.IGNORECASE,
+        )
+        accent = amounts[0].upper()[:32] if amounts else case["status"]
+        tags = ["techcrime", "corporatecrime", "publicrecord"]
+        tags.extend(
+            re.sub(r"[^a-z0-9]+", "", topic.lower())
+            for topic in case.get("topics", [])
+            if topic
+        )
+        record = {
+            "title": title,
+            "script": script,
+            "tags": list(dict.fromkeys(tags))[:7],
+            "search_query": f"{search_terms} official evidence investigation",
+            "visual_queries": [
+                f"{search_terms} official federal case document evidence close up",
+                f"{search_terms} digital investigation records cinematic medium shot",
+                f"{search_terms} documented legal consequence courthouse wide shot",
+            ],
+            "hook_overlay": " ".join(overlay_words),
+            "hook_accent": accent,
+            "evidence_label": f"DOJ {case['status']} // {case['year']}",
+            "source_url": case["url"],
+        }
+        record["fingerprint"] = _fingerprint("channel_1", title, script)
+        prompts.append(record)
+    return prompts
 
 
 STORY_PROTAGONISTS = [
@@ -215,17 +373,7 @@ def _stoic_prompts() -> list[dict]:
 
 def build_channel_prompts(channel_id: str) -> list[dict]:
     if channel_id == "channel_1":
-        # Lazily import the canonical, officially sourced case packs.
-        from modules.script_generator import FALLBACK_SCRIPTS
-
-        prompts = []
-        for source in FALLBACK_SCRIPTS["tech_crime"]:
-            record = dict(source)
-            record["fingerprint"] = _fingerprint(
-                channel_id, record["title"], record["script"]
-            )
-            prompts.append(record)
-        return prompts
+        return _tech_prompts()
     if channel_id == "channel_2":
         return _storyfuse_prompts()
     if channel_id == "channel_4":

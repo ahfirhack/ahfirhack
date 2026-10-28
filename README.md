@@ -98,7 +98,7 @@ You can also trigger it manually: **Actions → daily_upload → Run workflow**
   `prompt_reserve_channel_1.sqlite3`, `prompt_reserve_channel_2.sqlite3`,
   `prompt_reserve.sqlite3` (Channel 3), and `prompt_reserve_channel_4.sqlite3`.
   All state is committed after each run.
-- Ready-prompt counts are **Channel 1: 4 verified public-record cases**,
+- Ready-prompt counts are **Channel 1: 2,048 official public-record cases**,
   **Channel 2: 2,048**, **Channel 3: 2,560**, and **Channel 4: 2,048**.
   A used reserve row is deleted only after YouTube confirms the upload.
 
@@ -107,10 +107,10 @@ You can also trigger it manually: **Actions → daily_upload → Run workflow**
 ## How It Works
 
 ```
-Script (Groq / Gemini / OpenRouter Free / Cerebras / Nova / Claude / Bedrock)
+Script (12-provider active-model failover, then the channel's SQLite reserve)
     ↓
 Channel 3: Meta AI Create in persistent Chrome → 3 × 10-second scenes
-Other channels: stock clips until their individual optimization pass
+Other channels: ranked topic-matched clips for hook → escalation → payoff
     ↓
 Channel 3: preserve Meta video voice/audio; no added music
 Other channels: TTS voice + music
@@ -121,8 +121,16 @@ Upload to YouTube as #Shorts
 ```
 
 Channels 1, 2, and 4 use locked, channel-specific Edge voices, synchronized
-two-line captions, and episode-specific hook cards. Channel 3 adds no hook
-text, captions, end screen, external voiceover, or background music.
+two-line captions, and episode-specific hook cards. Their three narrative beats
+are matched against Pexels, Pixabay, Coverr, Wikimedia Commons, Internet
+Archive, and NASA media. Results are ranked by topic overlap and joined as
+equal, gapless hook/escalation/payoff segments. When no usable video matches a
+beat, a public-domain or NASA still is converted locally into a vertical motion
+clip. If no external asset clears the relevance gate, FFmpeg creates an
+exact-topic kinetic beat card locally, keeping the workflow free and fully
+automatic. Media credits are added to the YouTube description automatically.
+Channel 3 adds no hook text, captions, end screen, external voiceover, or
+background music; its Meta workflow is unchanged.
 
 The script generator has twelve integrations and discovers currently active
 models at runtime where catalogs are available. Its failover chain is Groq,

@@ -573,6 +573,7 @@ def _concat_seamless_scenes(
     total: float,
     output_path: str,
     preserve_audio: bool = False,
+    use_tail: bool = True,
 ) -> None:
     """Join equal-length scenes with normalized timestamps and no A/V gaps."""
     scene_duration = total / len(resized)
@@ -589,7 +590,7 @@ def _concat_seamless_scenes(
         # window. Keep its newest final segment so earlier action is not repeated.
         trim_start = (
             max(source_duration - scene_duration, 0.0)
-            if source_duration > scene_duration + 0.25
+            if use_tail and source_duration > scene_duration + 0.25
             else 0.0
         )
         filters.append(
@@ -665,6 +666,7 @@ def assemble_video(
     hook_accent="",
     evidence_label="",
     require_visuals=False,
+    align_visual_beats=False,
 ) -> str:
     """
     Assemble video with clips and audio.
@@ -742,6 +744,12 @@ def assemble_video(
             "to assemble an incomplete continuity sequence."
         )
 
+    if align_visual_beats and len(resized) != 3:
+        raise RuntimeError(
+            "Narrative visual alignment requires exactly three usable clips "
+            "(hook, escalation, payoff)."
+        )
+
     if not resized:
         if require_visuals:
             raise RuntimeError(
@@ -774,6 +782,10 @@ def assemble_video(
     if seamless_scenes:
         _concat_seamless_scenes(
             resized, total, ct, preserve_audio=native_clip_audio
+        )
+    elif align_visual_beats:
+        _concat_seamless_scenes(
+            resized, total, ct, preserve_audio=False, use_tail=False
         )
     else:
         with open(cl, "w") as f:

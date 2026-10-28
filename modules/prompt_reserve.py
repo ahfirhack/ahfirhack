@@ -251,7 +251,7 @@ def initialize_prompt_database(
         ).fetchone()
         if seeded is None:
             prompts = _seed_prompts(channel_id)
-            if channel_id in {"channel_2", "channel_3", "channel_4"} and len(prompts) < 2001:
+            if channel_id in {"channel_1", "channel_2", "channel_3", "channel_4"} and len(prompts) < 2001:
                 raise RuntimeError("Prompt reserve seed must contain more than 2,000 rows.")
             if not prompts:
                 raise RuntimeError(f"Prompt reserve for {channel_id} is empty.")

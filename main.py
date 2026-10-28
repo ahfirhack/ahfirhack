@@ -271,6 +271,7 @@ def process_video(
     media_source = channel.get("media_source", "stock")
     meta_job_dir = None
     meta_manifest = None
+    media_credits = []
 
     # 1. Script (unique — no repeats). An interrupted Meta AI job always resumes
     # before a new script is generated, so completed scenes are never orphaned.
@@ -330,13 +331,15 @@ def process_video(
     if media_source == "meta_ai_browser":
         print(f"[4/6] Using {len(clips)} Meta AI scenes...")
     else:
-        print(f"[4/6] Fetching {CLIP_COUNT} clips...")
-        clips = fetch_video_clips(
+        clip_count = 3 if channel.get("align_visual_beats", False) else CLIP_COUNT
+        print(f"[4/6] Fetching {clip_count} topic-matched clips...")
+        clips, media_credits = fetch_video_clips(
             query=search_query,
-            num_clips=CLIP_COUNT,
+            num_clips=clip_count,
             script=script,
             niche_keywords=channel.get("keywords", []),
             visual_queries=data.get("visual_queries", []),
+            include_attributions=True,
         )
 
     # 5. Assemble (Full HD 1080x1920, 9:16 Shorts)
@@ -364,6 +367,7 @@ def process_video(
         hook_accent=data.get("hook_accent", ""),
         evidence_label=data.get("evidence_label", ""),
         require_visuals=channel.get("require_visuals", False),
+        align_visual_beats=channel.get("align_visual_beats", False),
     )
 
     # 6. Upload as YouTube Short
@@ -376,6 +380,7 @@ def process_video(
         channel_config=channel,
         script=script,
         source_url=data.get("source_url", ""),
+        media_credits=media_credits,
     )
 
     if meta_job_dir is not None:
