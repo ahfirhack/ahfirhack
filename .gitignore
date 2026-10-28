@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+credentials/*_secrets.json
+credentials/*_token.json
+credentials/secrets.json
+meta_ai_jobs/
+.meta-ai-profile/
+output_videos/
+temp/
+music_cache/

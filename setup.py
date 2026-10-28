@@ -8,7 +8,6 @@ What it does automatically:
   - Encodes all credential files to base64
   - Pushes every secret + API key to GitHub
   - Bot runs forever after this
-github apikey: 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
 """
 
 import os, sys, json, base64, subprocess, time, pickle
@@ -17,8 +16,8 @@ import requests
 # ─────────────────────────────────────────────
 # FILL THESE IN (only 2 lines required)
 # ─────────────────────────────────────────────
-GITHUB_REPO    = "ahfirhack/ahfirhack"
-GITHUB_PAT     = "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"
+GITHUB_REPO = os.getenv("YOUTUBE_BOT_GITHUB_REPO", "ahfirhack/ahfirhack")
+GITHUB_PAT = os.getenv("YOUTUBE_BOT_GITHUB_PAT", "")
 
 # ─────────────────────────────────────────────
 
@@ -37,7 +36,7 @@ CHANNELS = [
     },
     {
         "id":      3,
-        "name":    "Digital & Home Declutter", # PIVOT: Specific Utility
+        "name":    "Epic History Kids",
         "secrets": "credentials/channel3_secrets.json",
         "token":   "credentials/channel3_token.json",
     },
@@ -81,8 +80,8 @@ def validate_config():
     errors = []
     if "YOUR_USERNAME" in GITHUB_REPO:
         errors.append("Set GITHUB_REPO at top of setup.py")
-    if "YOUR_GITHUB_PAT" in GITHUB_PAT:
-        errors.append("Set GITHUB_PAT at top of setup.py")
+    if not GITHUB_PAT:
+        errors.append("Set YOUTUBE_BOT_GITHUB_PAT in your environment")
     for ch in CHANNELS:
         if not os.path.exists(ch["secrets"]):
             errors.append("Missing " + ch["secrets"] + " — place channel" + str(ch["id"]) + "_secrets.json in credentials/")
@@ -160,25 +159,19 @@ def push_secret(name: str, value: str, key_id: str, public_key: str):
         print("[GitHub] FAILED " + name + ": " + str(r.status_code) + " " + r.text)
 
 
-def read_api_keys_from_config() -> dict:
-    import re
-    keys = {}
-    if not os.path.exists("config.py"):
-        return keys
-    with open("config.py", encoding='utf-8') as f:
-        content = f.read()
+def read_api_keys_from_environment() -> dict:
+    """Read provider credentials from the process environment, never source files."""
     wanted = [
         "GROQ_API_KEY", "GEMINI_API_KEY", "CLAUDE_API_KEY",
         "ANTHROPIC_API_KEY", "PEXELS_API_KEY", "PIXABAY_API_KEY",
-        "JAMENDO_CLIENT_ID", "FREESOUND_API_KEY", "REPLICATE_API_KEY",
-        "YOUTUBE_API_KEY", "NOVA_API_KEY", "ELEVEMLABS_API_KEY", "DEEPGRAM_API_KEY", "COVERR_API_KEY", 
+        "JAMENDO_CLIENT_ID", "FREESOUND_API_KEY",
+        "YOUTUBE_API_KEY", "NOVA_API_KEY", "ELEVENLABS_API_KEY",
+        "DEEPGRAM_API_KEY", "COVERR_API_KEY", "VIDEEZY_CLIENT_ID",
+        "VIDEEZY_CLIENT_SECRET", "AMAZON_ACCESS_KEY", "AMAZON_SECRET_KEY",
+        "AMAZON_REGION",
     ]
-    for var in wanted:
-        m = re.search(r'^\s*' + var + r'\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
-        if m and m.group(1).strip():
-            keys[var] = m.group(1).strip()
-            print("[Config] Found " + var)
-    return keys
+    keys = {name: os.getenv(name, "").strip() for name in wanted}
+    return {name: value for name, value in keys.items() if value}
 
 
 def push_all_secrets():
@@ -193,8 +186,8 @@ def push_all_secrets():
         all_secrets[f"CHANNEL{i}_SECRETS_B64"] = encode_file(ch["secrets"])
         all_secrets[f"CHANNEL{i}_TOKEN_B64"]   = encode_file(ch["token"])
 
-    # API keys from config.py
-    api_keys = read_api_keys_from_config()
+    # API keys from the environment
+    api_keys = read_api_keys_from_environment()
     all_secrets.update(api_keys)
 
     print("\n[GitHub] Pushing " + str(len(all_secrets)) + " secrets...\n")

@@ -11,6 +11,11 @@ from modules.voiceover import generate_voiceover
 from modules.music_fetcher import generate_background_music
 from modules.video_fetcher import fetch_video_clips
 from modules.video_assembler import assemble_video
+from modules.meta_ai_generator import (
+    create_job,
+    ensure_rendered_clips,
+    find_active_job,
+)
 
 def test_channel(ch):
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -20,22 +25,39 @@ def test_channel(ch):
 
     print(f"\n  TEST: {ch['name']} | Voice: {uv} | Music: {mm}\n")
 
-    data = generate_script(ch["niche"])
+    active_meta_job = find_active_job(ch["id"]) if ch.get("media_source") == "meta_ai_browser" else None
+    if active_meta_job:
+        manifest, meta_job_dir = active_meta_job
+        data = manifest["story"]
+    else:
+        data = generate_script(ch["niche"])
+        manifest = meta_job_dir = None
     print(f"  Title: {data['title']} | {len(data['script'].split())}w | Query: {data['search_query']}")
 
     # Generate voiceover
     voice_path = None
     if uv:
         voice_path = os.path.join(TEMP_DIR, f"{sn}_{ts}_voice.mp3")
-        generate_voiceover(data["script"], voice_path, channel_id=ch["id"])
+        generate_voiceover(
+            data["script"],
+            voice_path,
+            channel_id=ch["id"],
+            strict_voice=ch.get("strict_voice", False),
+            voice_provider=ch.get("voice_provider"),
+        )
 
     # Generate background music
     music_path = os.path.join(TEMP_DIR, f"{sn}_{ts}_music.mp3")
     generate_background_music(mm, SHORT_DURATION_TARGET, music_path)
 
     # Fetch clips
-    clips = fetch_video_clips(query=data["search_query"], num_clips=6,
-                               script=data["script"], niche_keywords=ch.get("keywords", []))
+    if ch.get("media_source") == "meta_ai_browser":
+        if manifest is None:
+            manifest, meta_job_dir = create_job(ch, data)
+        clips = ensure_rendered_clips(manifest, meta_job_dir)
+    else:
+        clips = fetch_video_clips(query=data["search_query"], num_clips=6,
+                                  script=data["script"], niche_keywords=ch.get("keywords", []))
 
     # Assemble video with voice + music
     audio_for_video = voice_path if voice_path else music_path
@@ -46,6 +68,9 @@ def test_channel(ch):
         output_filename=f"TEST_{sn}_{ts}.mp4",
         channel_name=ch["name"],
         music_path=music_path if voice_path else None,
+        target_duration=ch.get("target_duration"),
+        end_screen_duration=ch.get("end_screen_duration"),
+        seamless_scenes=ch.get("seamless_scenes", False),
     )
     print(f"\n  OUTPUT: {path}\n")
     return path

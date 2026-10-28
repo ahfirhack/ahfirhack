@@ -6,9 +6,13 @@ on:
     - cron: "0 */8 * * *"
   workflow_dispatch:
 
+concurrency:
+  group: youtube-automation-persistent-browser
+  cancel-in-progress: false
+
 jobs:
   upload:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 180
 
     permissions:
@@ -24,17 +28,28 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install ffmpeg + fonts
+      - name: Install ffmpeg, fonts, and virtual display
         run: |
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends \
-            ffmpeg fonts-open-sans fonts-dejavu-core fonts-liberation
+            ffmpeg fonts-open-sans fonts-dejavu-core fonts-liberation xvfb
 
       - name: Install Python dependencies
         run: |
           pip install -r requirements.txt
-          # FIX: Resolves the "unexpected keyword argument 'timeout'" error
           pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
+          python -m playwright install chromium --with-deps
+
+      - name: Validate persistent Meta AI directories
+        env:
+          META_AI_CHROME_PROFILE_DIR: ${{ vars.META_AI_CHROME_PROFILE_DIR }}
+          META_AI_JOBS_DIR: ${{ vars.META_AI_JOBS_DIR }}
+        run: |
+          if [ -z "$META_AI_CHROME_PROFILE_DIR" ] || [ -z "$META_AI_JOBS_DIR" ]; then
+            echo "Set repository variables META_AI_CHROME_PROFILE_DIR and META_AI_JOBS_DIR to absolute persistent paths on this self-hosted runner."
+            exit 1
+          fi
+          mkdir -p "$META_AI_CHROME_PROFILE_DIR" "$META_AI_JOBS_DIR"
 
       - name: Restore credentials
         run: |
@@ -73,22 +88,17 @@ jobs:
           FREESOUND_API_KEY:     ${{ secrets.FREESOUND_API_KEY }}
           ELEVENLABS_API_KEY:    ${{ secrets.ELEVENLABS_API_KEY }}
           DEEPGRAM_API_KEY:      ${{ secrets.DEEPGRAM_API_KEY }}
-        run: python main.py --once
-
-      - name: Save refreshed tokens
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          for i in 1 2 3 4; do
-            f="credentials/channel${i}_token.json"
-            if [ -f "$f" ]; then
-              gh secret set "CHANNEL${i}_TOKEN_B64" < <(base64 -w 0 "$f")
-              echo "[Token] ✅ CHANNEL${i}_TOKEN updated"
-            else
-              echo "[Token] ⚠️ $f not found — skipping"
-            fi
-          done
+          COVERR_API_KEY:        ${{ secrets.COVERR_API_KEY }}
+          VIDEEZY_CLIENT_ID:     ${{ secrets.VIDEEZY_CLIENT_ID }}
+          VIDEEZY_CLIENT_SECRET: ${{ secrets.VIDEEZY_CLIENT_SECRET }}
+          YOUTUBE_API_KEY:       ${{ secrets.YOUTUBE_API_KEY }}
+          META_AI_CHROME_PROFILE_DIR: ${{ vars.META_AI_CHROME_PROFILE_DIR }}
+          META_AI_JOBS_DIR:      ${{ vars.META_AI_JOBS_DIR }}
+          META_AI_CHARACTER_IMAGE: ${{ vars.META_AI_CHARACTER_IMAGE }}
+          META_AI_BROWSER_CHANNEL: chromium
+          META_AI_HEADLESS: "false"
+          META_AI_TIMEOUT_SECONDS: "900"
+        run: xvfb-run -a python main.py --once
 
       - name: Commit dedup state
         if: always()

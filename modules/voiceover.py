@@ -15,7 +15,7 @@ from config import DEEPGRAM_API_KEY, CHANNEL_VOICES, EDGE_VOICES
 DEEPGRAM_MODELS = {
     "channel_1": "aura-2-zeus-en",      # Psychology: Deep, commanding, dramatic
     "channel_2": "aura-2-orpheus-en",   # History: Authoritative, discovery-channel vibe
-    "channel_3": "aura-2-atlas-en",     # Declutter: Friendly, energetic, helpful
+    "channel_3": "aura-2-atlas-en",     # Kids history: Friendly, energetic storyteller
     "channel_4": "aura-odysseus-en",    # Stoic: Calm, steady, philosophical
 }
 
@@ -78,7 +78,13 @@ def _generate_edge_tts(script: str, voice: str, output_path: str) -> bool:
         return False
 
 
-def generate_voiceover(script: str, output_path: str, channel_id: str = None) -> str:
+def generate_voiceover(
+    script: str,
+    output_path: str,
+    channel_id: str = None,
+    strict_voice: bool = False,
+    voice_provider: str | None = None,
+) -> str:
     """
     Converts script text to MP3 voiceover.
     Uses channel-specific voice from Deepgram, falls back to Edge TTS.
@@ -106,9 +112,24 @@ def generate_voiceover(script: str, output_path: str, channel_id: str = None) ->
 
     print(f"[Voiceover] Generating for {channel_id or 'default'} | Deepgram: {deepgram_model} | Edge: {edge_voice}")
 
+    if voice_provider == "edge":
+        if _generate_edge_tts(script, edge_voice, output_path):
+            return output_path
+        raise RuntimeError(
+            f"Locked Edge voice generation failed for {channel_id or 'default'} "
+            f"({edge_voice}); refusing to substitute a different voice."
+        )
+
     # Try Deepgram first
     if _generate_deepgram(script, deepgram_model, output_path):
         return output_path
+
+    # Character-led channels must never switch voices between episodes.
+    if strict_voice:
+        raise RuntimeError(
+            f"Locked voice generation failed for {channel_id or 'default'} "
+            f"({deepgram_model}); refusing to substitute a different voice."
+        )
 
     # Fallback to Edge TTS
     if _generate_edge_tts(script, edge_voice, output_path):

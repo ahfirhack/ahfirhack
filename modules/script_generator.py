@@ -20,7 +20,7 @@ from config import GEMINI_API_KEY, GROQ_API_KEY, CLAUDE_API_KEY, NOVA_API_KEY, A
 GROQ_URL   = "https://api.groq.com/openai/v1/chat/completions"
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
-    "gemini-2.0-flash:generateContent?key=" + GEMINI_API_KEY
+    "gemini-2.0-flash:generateContent"
 )
 CLAUDE_URL = "https://api.anthropic.com/v1/messages"
 NOVA_URL   = "https://api.nova.ai/v1/chat/completions"
@@ -52,6 +52,14 @@ NICHE_SEARCH_HINTS = {
         "underwater ancient ruins",
         "stars and galaxy night sky",
     ],
+    "kids_history": [
+        "ancient Egyptian temple in sunlight",
+        "medieval castle exterior daytime",
+        "Roman ruins with people exploring",
+        "old sailing ship on the ocean",
+        "historic invention in a museum",
+        "ancient city reconstruction animation",
+    ],
     "tutorial": [
         "clean organized desk workspace",
         "person organizing digital files",
@@ -78,6 +86,15 @@ FALLBACK_SCRIPTS = {
     "documentary": [ # For the "History Mystery" Channel
         {"title": "The Machine That Shouldn't Exist", "script": "In 1901, divers found a rusted bronze device in an ancient shipwreck. They thought it was a gear. It turned out to be a computer built two thousand years ago. It’s called the Antikythera Mechanism. It could predict eclipses and track the stars with terrifying accuracy. But there's a problem. This level of technology wasn't supposed to exist for another thousand years. Who built it? And where did that knowledge go? History isn't a straight line. It's a series of lost secrets.", "tags": ["historymystery", "ancienttech", "unexplained", "lostcivilization", "science"], "search_query": "ancient rusted bronze gears artifact"},
     ],
+    "kids_history": [ # For the "Epic History Kids" Channel
+        {"title": "Could You Rule Egypt at Nine Years Old?", "script": "Imagine becoming king before finishing elementary school. Tutankhamun was about nine when he became pharaoh of ancient Egypt. Advisors helped him rule while he learned the job. He restored temples and reversed changes from the previous ruler. Tutankhamun died around nineteen. More than three thousand years later, archaeologists opened his nearly intact tomb. Its treasures made the young pharaoh world-famous. Could you rule a kingdom at nine? Like and Subscribe for more.", "tags": ["historyforkids", "ancientegypt", "tutankhamun", "kidshistory", "educationalshorts"], "search_query": "golden Egyptian pharaoh mask museum close up"},
+        {"title": "How Did the Great Wall Send Messages?", "script": "What if a wall could send a message faster than a horse? Milo visits ancient China, where guards watched from towers. Smoke signals warned nearby towers during daylight. Fire signals carried warnings after dark. Different dynasties built and rebuilt many sections over centuries. The famous Ming walls linked forts across huge distances. One signal could race along the frontier. Would you spot it in time? Like and Subscribe for more.", "tags": ["historyforkids", "ancientchina", "greatwall", "kidshistory", "educationalshorts"], "search_query": "Great Wall of China watchtower smoke signal animation"},
+        {"title": "The City Hidden Under Ancient Ash", "script": "What if an ancient city suddenly became a time capsule? Milo arrives in Pompeii before Mount Vesuvius erupted in 79 CE. Ash covered streets, shops, mosaics, and everyday objects. Centuries later, explorers began uncovering the buried city. Archaeologists now study its buildings and belongings to understand Roman daily life. Even old bread ovens survived beneath the ash. What would your room reveal to historians? Like and Subscribe for more.", "tags": ["historyforkids", "pompeii", "ancientrome", "kidshistory", "educationalshorts"], "search_query": "ancient Pompeii street mosaic archaeology animation"},
+        {"title": "The Machine That Made Books Travel", "script": "What if every book had to be copied by hand? Milo enters a workshop in Mainz around 1450. Johannes Gutenberg combined movable metal type, ink, and a press to print pages repeatedly. Printers could make books faster and in greater numbers. Reading material traveled farther, helping ideas spread across Europe. The machine did not invent writing, but it transformed publishing. Which book would you print first? Like and Subscribe for more.", "tags": ["historyforkids", "gutenberg", "printingpress", "kidshistory", "inventions"], "search_query": "Gutenberg printing press workshop movable type animation"},
+        {"title": "The First Computer Program Came Before Computers", "script": "What if you wrote computer instructions before computers existed? Milo meets Ada Lovelace in 1843. She studied Charles Babbage's planned Analytical Engine, a mechanical calculating machine. In her published notes, Ada described steps for calculating Bernoulli numbers. That sequence is often called the first published computer program. The engine was never completed in her lifetime, but her ideas looked far ahead. What would you ask Ada to calculate? Like and Subscribe for more.", "tags": ["historyforkids", "adalovelace", "computerhistory", "kidshistory", "stemforkids"], "search_query": "Ada Lovelace Victorian mechanical computer gears animation"},
+        {"title": "How Sailors Found Islands Without Compasses", "script": "What if you crossed a giant ocean without a map or compass? Milo joins Polynesian navigators in a double-hulled canoe. They read star paths, ocean swells, winds, clouds, and the flights of birds. Knowledge passed carefully between generations. Using these clues, voyagers traveled across the Pacific and settled distant islands centuries before European explorers arrived. The ocean became their living map. Could you follow the stars home? Like and Subscribe for more.", "tags": ["historyforkids", "polynesiahistory", "navigation", "kidshistory", "oceanexplorers"], "search_query": "Polynesian double hulled canoe navigating by stars animation"},
+        {"title": "The Underground Army Found by Farmers", "script": "What if thousands of clay soldiers waited underground for two thousand years? Milo travels to China in 1974, when farmers digging a well found pottery fragments. Archaeologists uncovered a vast terracotta army made for Emperor Qin Shi Huang. Soldiers, horses, and chariots stood in huge pits near his tomb. Many figures have different faces and hairstyles. The discovery revealed astonishing ancient craftsmanship. Which warrior would you investigate first? Like and Subscribe for more.", "tags": ["historyforkids", "terracottaarmy", "ancientchina", "archaeology", "educationalshorts"], "search_query": "Terracotta Army excavation archaeologists 3D animation"},
+    ],
     "tutorial": [ # For the "Digital & Home Declutter" Channel
         {"title": "The 'One-Touch' Rule for a Clean Desk", "script": "Your desk is messy because you touch things twice. You pick up a bill, look at it, and put it down. That's two touches. The 'One-Touch' rule says if you touch it, you must finish it. File it, delete it, or throw it away. Never put it back down to 'deal with later.' I tried this for one week and my workspace stayed spotless without any extra effort. Your brain can't focus in chaos. Clear the desk, clear the mind. Try the one-touch rule today.", "tags": ["productivity", "minimalism", "desksetup", "organizing", "lifehack"], "search_query": "clean minimalist desk workspace setup"},
     ],
@@ -95,6 +112,12 @@ FALLBACK_SCRIPTS = {
 
 def _detect_niche_key(niche: str) -> str:
     n = niche.lower()
+
+    # Kids' history needs age-appropriate scripts and visuals, not mystery content.
+    if any(w in n for w in ["kid", "children", "young audience"]) and any(
+        w in n for w in ["history", "historical", "ancient civilization"]
+    ):
+        return "kids_history"
 
     # NEW: Psychology & Human Behavior (Fast viral potential)
     if any(w in n for w in ["psychology", "human behavior", "mind tricks", "social psychology", "cognitive bias", "behavior"]):
@@ -136,17 +159,33 @@ def _get_fallback(niche: str) -> dict:
 
 
 def _build_prompt(niche: str) -> str:
+    kids_history = _detect_niche_key(niche) == "kids_history"
+    length_rule = (
+        "60-70 words exactly, written for a 30-second narration."
+        if kids_history else
+        "80-90 words, written for a 30-40 second narration."
+    )
+    kids_rules = """
+KIDS' HISTORY EPISODE RULES:
+- Tell one accurate, chronological story with three clear visual beats.
+- Use simple language for ages 7-12 and no graphic violence, fear, or adult themes.
+- Milo is the recurring ten-year-old time-travel guide. Write narration only; no quoted character dialogue and no lip-sync directions.
+- Group the narration into three concrete visual beats, one for each ten-second animated scene.
+- Never change Milo's appearance, clothing, age, or personality.
+""" if kids_history else ""
     return f"""You are a viral YouTube Shorts scriptwriter optimized for human-like VOICE narration.
 
 Niche: {niche}
+{kids_rules}
 
 VOICE-OPTIMIZED RULES:
-1. SCRIPT LENGTH: 80-100 words. (Crucial for a 30-40 second pace).
+1. SCRIPT LENGTH: {length_rule}
 2. CONVERSATIONAL TONE: Use contractions (don't, it's). No complex jargon. Speak like a person, not a bot.
 3. THE HOOK: The first sentence must trigger an emotional response (Anger, Curiosity, or Shock).
    - For English Learning: Start with a surprising fact or common mistake.
    - For Stories: Start with the conflict.
    - For Mystery: Start with a mystery.
+   - For Kids' History: Start with an imaginative "What if...?" or a surprising factual question. Keep every detail accurate, age-appropriate, and free of graphic violence.
 4. STRUCTURE: No "Welcome back" or "Thanks for watching." Get straight to the point.
 5. THE LOOP: The final sentence must flow back into the first sentence to encourage re-watches.
 6. SENTENCE LENGTH: 5-12 words max. Short sentences create better rhythm in ElevenLabs.
@@ -170,6 +209,19 @@ def _parse_json(raw: str) -> dict:
     return json.loads(raw.strip())
 
 
+def _log_provider_error(provider: str, error: Exception) -> None:
+    """Log useful failure information without printing request URLs or credentials."""
+    response = getattr(error, "response", None)
+    status_code = getattr(response, "status_code", None)
+    if status_code is not None:
+        detail = f"HTTP {status_code}"
+    elif isinstance(error, ClientError):
+        detail = error.response.get("Error", {}).get("Code", "ClientError")
+    else:
+        detail = type(error).__name__
+    print(f"[ScriptGen] {provider} failed ({detail})")
+
+
 def _try_nova(prompt: str) -> dict | None:
     if not NOVA_API_KEY:
         return None
@@ -188,7 +240,7 @@ def _try_nova(prompt: str) -> dict | None:
         print("[ScriptGen] Script via Nova")
         return data
     except Exception as e:
-        print(f"[ScriptGen] Nova: {e}")
+        _log_provider_error("Nova", e)
         return None
 
 
@@ -210,7 +262,7 @@ def _try_groq(prompt: str) -> dict | None:
         print("[ScriptGen] Script via Groq")
         return data
     except Exception as e:
-        print(f"[ScriptGen] Groq: {e}")
+        _log_provider_error("Groq", e)
         return None
 
 
@@ -219,6 +271,7 @@ def _try_gemini(prompt: str) -> dict | None:
         return None
     try:
         resp = requests.post(GEMINI_URL,
+            params={"key": GEMINI_API_KEY},
             json={"contents": [{"parts": [{"text": prompt}]}],
                   "generationConfig": {"temperature": 0.9, "maxOutputTokens": 500}},
             timeout=(8, 25))
@@ -230,7 +283,7 @@ def _try_gemini(prompt: str) -> dict | None:
         print("[ScriptGen] Script via Gemini")
         return data
     except Exception as e:
-        print(f"[ScriptGen] Gemini: {e}")
+        _log_provider_error("Gemini", e)
         return None
 
 
@@ -251,7 +304,7 @@ def _try_claude(prompt: str) -> dict | None:
         print("[ScriptGen] Script via Claude")
         return data
     except Exception as e:
-        print(f"[ScriptGen] Claude: {e}")
+        _log_provider_error("Claude", e)
         return None
 
 
@@ -291,10 +344,10 @@ def _try_amazon(prompt: str) -> dict | None:
         print("[ScriptGen] Script via Amazon Bedrock")
         return data
     except ClientError as e:
-        print(f"[ScriptGen] Amazon Bedrock: {e}")
+        _log_provider_error("Amazon Bedrock", e)
         return None
     except Exception as e:
-        print(f"[ScriptGen] Amazon: {e}")
+        _log_provider_error("Amazon", e)
         return None
 
 
@@ -341,6 +394,8 @@ def _post_process_script(script: str) -> str:
 def generate_script(niche: str) -> dict:
     prompt = _build_prompt(niche)
     providers = [(_try_groq, "Groq"), (_try_nova, "Nova"), (_try_gemini, "Gemini"), (_try_claude, "Claude"), (_try_amazon, "Amazon")]
+    niche_key = _detect_niche_key(niche)
+    min_words, max_words = (60, 75) if niche_key == "kids_history" else (MIN_WORDS, MAX_WORDS)
 
     for fn, name in providers:
         result = fn(prompt)
@@ -361,11 +416,11 @@ def generate_script(niche: str) -> dict:
             result["search_query"] = random.choice(
                 NICHE_SEARCH_HINTS.get(key, ["nature background video"]))
 
-        if MIN_WORDS <= wc <= MAX_WORDS:
+        if min_words <= wc <= max_words:
             print(f"[ScriptGen] Accepted: {wc}w | {result['title'][:50]}")
             return result
 
-        print(f"[ScriptGen] {name}: {wc}w out of range ({MIN_WORDS}-{MAX_WORDS}) -> next provider")
+        print(f"[ScriptGen] {name}: {wc}w out of range ({min_words}-{max_words}) -> next provider")
 
     print("[ScriptGen] All providers failed -> fallback")
     fallback = _get_fallback(niche)

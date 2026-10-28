@@ -27,6 +27,14 @@ from modules.video_fetcher import fetch_video_clips
 from modules.video_assembler import assemble_video
 from modules.uploader import upload_video
 from modules.voiceover import generate_voiceover
+from modules.meta_ai_generator import (
+    MetaAIAutomationError,
+    bootstrap_meta_login,
+    create_job,
+    ensure_rendered_clips,
+    find_active_job,
+    mark_job_complete,
+)
 
 CLIP_COUNT = 6
 
@@ -149,22 +157,50 @@ def process_video(channel: dict, video_index: int, used_scripts: set):
     print(f"  Video {video_index + 1}/{VIDEOS_PER_CHANNEL_PER_DAY}")
     print(f"{'='*60}\n")
 
-    # 1. Script (unique — no repeats)
+    media_source = channel.get("media_source", "stock")
+    meta_job_dir = None
+    meta_manifest = None
+
+    # 1. Script (unique — no repeats). An interrupted Meta AI job always resumes
+    # before a new script is generated, so completed scenes are never orphaned.
     print("[1/6] Script (unique)...")
-    data         = _generate_unique_script(niche, used_scripts)
+    active_meta_job = find_active_job(channel["id"]) if media_source == "meta_ai_browser" else None
+    if active_meta_job:
+        meta_manifest, meta_job_dir = active_meta_job
+        data = meta_manifest["story"]
+        print(f"      Resuming Meta AI job: {meta_manifest['job_id']}")
+    else:
+        data = _generate_unique_script(niche, used_scripts)
+
     title        = data["title"]
     script       = data["script"]
     tags         = data["tags"]
-    search_query = data["search_query"]
+    search_query = data.get("search_query", title)
     print(f"      Title: {title}")
     print(f"      Words: {len(script.split())} | Query: {search_query}")
+
+    # Meta AI runs through the dedicated signed-in Playwright Chrome profile.
+    # No media-generation API key is stored or required.
+    clips = None
+    if media_source == "meta_ai_browser":
+        if meta_manifest is None:
+            meta_manifest, meta_job_dir = create_job(channel, data)
+            print(f"      Meta AI prompt batch: {meta_job_dir / 'meta_prompts.txt'}")
+        clips = ensure_rendered_clips(meta_manifest, meta_job_dir)
+        print(f"      Meta AI renders ready: {len(clips)} seamless scenes")
 
     # 2. Voiceover (if enabled)
     voice_path = None
     if use_voice:
         print("[2/6] Voiceover (Deepgram/Edge TTS)...")
         voice_path = os.path.join(TEMP_DIR, f"{safe_name}_{timestamp}_voice.mp3")
-        generate_voiceover(script, voice_path, channel_id=channel["id"])
+        generate_voiceover(
+            script,
+            voice_path,
+            channel_id=channel["id"],
+            strict_voice=channel.get("strict_voice", False),
+            voice_provider=channel.get("voice_provider"),
+        )
     else:
         print("[2/6] Voiceover skipped (music only)")
 
@@ -174,13 +210,16 @@ def process_video(channel: dict, video_index: int, used_scripts: set):
     generate_background_music(music_mood, SHORT_DURATION_TARGET, music_path)
 
     # 4. Footage
-    print(f"[4/6] Fetching {CLIP_COUNT} clips...")
-    clips = fetch_video_clips(
-        query=search_query,
-        num_clips=CLIP_COUNT,
-        script=script,
-        niche_keywords=channel.get("keywords", []),
-    )
+    if media_source == "meta_ai_browser":
+        print(f"[4/6] Using {len(clips)} Meta AI scenes...")
+    else:
+        print(f"[4/6] Fetching {CLIP_COUNT} clips...")
+        clips = fetch_video_clips(
+            query=search_query,
+            num_clips=CLIP_COUNT,
+            script=script,
+            niche_keywords=channel.get("keywords", []),
+        )
 
     # 5. Assemble (Full HD 1080x1920, 9:16 Shorts)
     print("[5/6] Assembling...")
@@ -196,6 +235,9 @@ def process_video(channel: dict, video_index: int, used_scripts: set):
         output_filename=fname,
         channel_name=channel_name,
         music_path=music_path if voice_path else None,
+        target_duration=channel.get("target_duration"),
+        end_screen_duration=channel.get("end_screen_duration"),
+        seamless_scenes=channel.get("seamless_scenes", False),
     )
 
     # 6. Upload as YouTube Short
@@ -209,22 +251,29 @@ def process_video(channel: dict, video_index: int, used_scripts: set):
         script=script,
     )
 
+    if meta_job_dir is not None:
+        mark_job_complete(meta_job_dir, video_id)
+
     print(f"\n  {channel_name} → https://youtube.com/shorts/{video_id}\n")
     return video_id
 
 
 # ── Daily batch ──────────────────────────────────────────────
-def run_daily_batch():
+def run_daily_batch(channel_ids: set[str] | None = None):
     now   = datetime.datetime.now()
-    total = len(CHANNELS) * VIDEOS_PER_CHANNEL_PER_DAY
+    channels = [
+        channel for channel in CHANNELS
+        if not channel_ids or channel["id"] in channel_ids
+    ]
+    total = len(channels) * VIDEOS_PER_CHANNEL_PER_DAY
 
     print(f"\n  YouTube Automation — {now.strftime('%Y-%m-%d %H:%M %A')}")
-    print(f"  Channels: {len(CHANNELS)} | Videos/channel: {VIDEOS_PER_CHANNEL_PER_DAY} | Total: {total}\n")
+    print(f"  Channels: {len(channels)} | Videos/channel: {VIDEOS_PER_CHANNEL_PER_DAY} | Total: {total}\n")
 
     used_scripts = _load_used_scripts()
     results = []
 
-    for ch in CHANNELS:
+    for channel_index, ch in enumerate(channels):
         for i in range(VIDEOS_PER_CHANNEL_PER_DAY):
             try:
                 clean_temp()
@@ -232,10 +281,14 @@ def run_daily_batch():
                 results.append({"ch": ch["name"], "vid": vid, "ok": True})
                 if i < VIDEOS_PER_CHANNEL_PER_DAY - 1:
                     time.sleep(30)
+            except MetaAIAutomationError as e:
+                print(f"\n  META AI ERROR {ch['name']}: {e}")
+                results.append({"ch": ch["name"], "vid": None, "ok": False})
             except Exception as e:
                 print(f"\n  ERROR {ch['name']}: {e}")
                 results.append({"ch": ch["name"], "vid": None, "ok": False})
-        time.sleep(60)
+        if channel_index < len(channels) - 1:
+            time.sleep(60)
 
     ok = sum(1 for r in results if r["ok"])
     print(f"\n{'='*60}")
@@ -244,6 +297,7 @@ def run_daily_batch():
         s = "OK" if r["ok"] else "FAIL"
         print(f"  [{s}] {r['ch']} — {r.get('vid', 'error')}")
     print(f"{'='*60}\n")
+    return bool(results) and ok == len(results)
 
 
 # ── 8-hour schedule loop ───────────────────────────────────────
@@ -274,14 +328,63 @@ def run_scheduled():
             time.sleep(60)
 
 
+def prepare_meta_job_only() -> str:
+    """Generate or resume Channel 3's Meta AI job without rendering/uploading."""
+    channel = next(
+        (item for item in CHANNELS if item.get("media_source") == "meta_ai_browser"),
+        None,
+    )
+    if channel is None:
+        raise RuntimeError("No Meta AI browser channel is configured.")
+
+    active = find_active_job(channel["id"])
+    if active:
+        manifest, job_dir = active
+        print(f"[MetaAI] Resuming job: {manifest['job_id']}")
+    else:
+        used_scripts = _load_used_scripts()
+        story = _generate_unique_script(channel["niche"], used_scripts)
+        manifest, job_dir = create_job(channel, story)
+        print(f"[MetaAI] Created job: {manifest['job_id']}")
+
+    print(f"[MetaAI] Character prompt: {job_dir / 'milo_reference_prompt.txt'}")
+    print(f"[MetaAI] Video prompt batch: {job_dir / 'meta_prompts.txt'}")
+    print("[MetaAI] The scheduled browser runner will render this job automatically.")
+    return str(job_dir)
+
+
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="YouTube Multi-Channel Automation")
     parser.add_argument("--once", action="store_true", help="Run once and exit (no schedule)")
+    parser.add_argument(
+        "--prepare-meta",
+        action="store_true",
+        help="Create/resume Channel 3's Meta AI prompt job only",
+    )
+    parser.add_argument(
+        "--meta-login",
+        action="store_true",
+        help="Open the persistent Chrome profile for the one-time Meta login",
+    )
+    parser.add_argument(
+        "--channel",
+        action="append",
+        choices=["1", "2", "3", "4"],
+        help="With --once, process only this channel (repeatable)",
+    )
     args = parser.parse_args()
 
-    if args.once:
-        run_daily_batch()
+    if args.meta_login:
+        bootstrap_meta_login()
+    elif args.prepare_meta:
+        prepare_meta_job_only()
+    elif args.once:
+        selected = {f"channel_{value}" for value in args.channel} if args.channel else None
+        if not run_daily_batch(selected):
+            raise SystemExit(1)
     else:
+        if args.channel:
+            parser.error("--channel requires --once")
         run_scheduled()

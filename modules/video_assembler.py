@@ -233,7 +233,12 @@ def _build_hook_filter(font_bold: str) -> str:
     return ",".join(filters)
 
 
-def _build_caption_filter(script: str, total_dur: float, font_bold: str) -> str:
+def _build_caption_filter(
+    script: str,
+    total_dur: float,
+    font_bold: str,
+    end_screen_duration: float = END_SCREEN_DURATION,
+) -> str:
     """
     Caption rules:
     - 5 words per line
@@ -285,7 +290,7 @@ def _build_caption_filter(script: str, total_dur: float, font_bold: str) -> str:
             idx += size
 
     cap_start = 2.0
-    cap_end   = max(total_dur - END_SCREEN_DURATION, total_dur * 0.85)
+    cap_end   = max(total_dur - end_screen_duration, total_dur * 0.85)
     cap_dur   = cap_end - cap_start
 
     # Guard: if video is too short to fit captions, bail out
@@ -316,13 +321,76 @@ def _build_caption_filter(script: str, total_dur: float, font_bold: str) -> str:
     return ",".join(filters)
 
 
-def _build_end_screen_filter(total_dur, font_bold, font_regular, channel_name=""):
-    t0 = total_dur - END_SCREEN_DURATION
+def _build_end_screen_filter(
+    total_dur,
+    font_bold,
+    font_regular,
+    channel_name="",
+    end_screen_duration: float = END_SCREEN_DURATION,
+):
+    if end_screen_duration <= 0:
+        return ""
+    t0 = total_dur - end_screen_duration
     eb = f"gte(t,{t0:.2f})"
     return f"drawbox=x=0:y=0:w={WIDTH}:h={HEIGHT}:color=black@0.8:t=fill:enable='{eb}'"
 
 
-def assemble_video(clip_paths, audio_path, script, output_filename, channel_name="", music_path=None) -> str:
+def _concat_seamless_scenes(resized: list[str], total: float, output_path: str) -> None:
+    """Join equal-length scenes with normalized timestamps and no gap frames."""
+    scene_duration = total / len(resized)
+    inputs = []
+    filters = []
+    labels = []
+    for index, path in enumerate(resized):
+        inputs.extend(["-i", path])
+        label = f"v{index}"
+        labels.append(f"[{label}]")
+        source_duration = _dur(path)
+        # A browser generator may return a clip longer than the assigned scene
+        # window. Keep its newest final segment so earlier action is not repeated.
+        trim_start = (
+            max(source_duration - scene_duration, 0.0)
+            if source_duration > scene_duration + 0.25
+            else 0.0
+        )
+        filters.append(
+            f"[{index}:v]fps=30,"
+            f"tpad=stop_mode=clone:stop_duration={scene_duration:.3f},"
+            f"trim=start={trim_start:.3f}:duration={scene_duration:.3f},"
+            f"setpts=PTS-STARTPTS[{label}]"
+        )
+
+    filters.append(
+        "".join(labels) + f"concat=n={len(resized)}:v=1:a=0[outv]"
+    )
+    _ffmpeg(
+        inputs + [
+            "-filter_complex", ";".join(filters),
+            "-map", "[outv]",
+            "-an",
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", str(VIDEO_CRF),
+            "-pix_fmt", "yuv420p",
+            "-r", "30",
+            "-t", f"{total:.3f}",
+            output_path,
+        ],
+        "seamless_concat",
+    )
+
+
+def assemble_video(
+    clip_paths,
+    audio_path,
+    script,
+    output_filename,
+    channel_name="",
+    music_path=None,
+    target_duration=None,
+    end_screen_duration=None,
+    seamless_scenes=False,
+) -> str:
     """
     Assemble video with clips and audio.
     If music_path is provided, mixes voice (audio_path) with background music.
@@ -344,13 +412,14 @@ def assemble_video(clip_paths, audio_path, script, output_filename, channel_name
         audio_path = audio_path.replace("\\", "/").replace(":", "\\:", 1)
 
     a_dur = _dur(audio_path)
-    total = a_dur + END_SCREEN_DURATION
+    end_duration = END_SCREEN_DURATION if end_screen_duration is None else float(end_screen_duration)
+    total = float(target_duration) if target_duration else a_dur + end_duration
 
-    # Extend audio with silence for end screen
+    # Pad or trim audio to the exact final duration.
     ext_audio = os.path.join(TEMP_DIR, "audio_ext.mp3")
-    _ffmpeg(["-i", audio_path, "-af", f"apad=pad_dur={END_SCREEN_DURATION}",
+    _ffmpeg(["-i", audio_path, "-af", f"apad=pad_dur={max(total - a_dur, 0):.3f}",
              "-t", str(total), ext_audio], "ext_audio")
-    print(f"[Assembler] {a_dur:.0f}s music + {END_SCREEN_DURATION}s end screen = {total:.0f}s")
+    print(f"[Assembler] {a_dur:.1f}s audio -> exact {total:.1f}s video")
 
     # Resize clips to Full HD portrait
     resized = []
@@ -362,6 +431,12 @@ def assemble_video(clip_paths, audio_path, script, output_filename, channel_name
         except Exception as e:
             print(f"[Assembler] Skip clip: {e}")
 
+    if seamless_scenes and len(resized) != len(clip_paths):
+        raise RuntimeError(
+            "One or more generated scenes could not be normalized; refusing "
+            "to assemble an incomplete continuity sequence."
+        )
+
     if not resized:
         black = os.path.join(TEMP_DIR, "black.mp4")
         _ffmpeg(["-f", "lavfi", "-i", f"color=c=black:s={WIDTH}x{HEIGHT}:r=30:d={total}",
@@ -369,7 +444,8 @@ def assemble_video(clip_paths, audio_path, script, output_filename, channel_name
                  "-pix_fmt", "yuv420p", black], "black")
         resized = [black]
 
-    # Concat clips to fill total duration
+    # Concat clips to fill total duration. Browser-generated scenes use
+    # normalized equal segments and reset timestamps, preventing black gaps.
     cl  = os.path.join(TEMP_DIR, "cl.txt")
     acc, used = 0.0, []
     for rp in resized:
@@ -383,19 +459,21 @@ def assemble_video(clip_paths, audio_path, script, output_filename, channel_name
         used.append(used[-1])
         acc += _dur(used[-1])
 
-    with open(cl, "w") as f:
-        for rp in used:
-            f.write(f"file '{os.path.abspath(rp)}'\n")
-
     cr = os.path.join(TEMP_DIR, "cr.mp4")
     ct = os.path.join(TEMP_DIR, "ct.mp4")
-    _ffmpeg(["-f", "concat", "-safe", "0", "-i", cl, "-c", "copy", cr], "concat")
-    _ffmpeg(["-i", cr, "-t", str(total), "-c", "copy", ct], "trim")
+    if seamless_scenes:
+        _concat_seamless_scenes(resized, total, ct)
+    else:
+        with open(cl, "w") as f:
+            for rp in used:
+                f.write(f"file '{os.path.abspath(rp)}'\n")
+        _ffmpeg(["-f", "concat", "-safe", "0", "-i", cl, "-c", "copy", cr], "concat")
+        _ffmpeg(["-i", cr, "-t", str(total), "-c", "copy", ct], "trim")
 
     # Build combined overlay: hook → captions → end screen
     hook_f    = _build_hook_filter(fb)
-    caption_f = _build_caption_filter(script, total, fb)
-    end_f     = _build_end_screen_filter(total, fb, fr, channel_name)
+    caption_f = _build_caption_filter(script, total, fb, end_duration)
+    end_f     = _build_end_screen_filter(total, fb, fr, channel_name, end_duration)
     parts     = [p for p in [hook_f, caption_f, end_f] if p]
     vf        = ",".join(parts)
 

@@ -1,5 +1,7 @@
 # YouTube Multi-Channel Automation — API Keys & Settings
 
+import os
+
 # Number of videos to generate per run
 NUM_VIDEOS = 1
 
@@ -13,36 +15,43 @@ UPLOAD_INTERVAL_SECONDS = UPLOAD_INTERVAL_HOURS * 3600
 # ═══════════════════════════════════════════════════════
 # AI / SCRIPT GENERATION
 # ═══════════════════════════════════════════════════════
-NOVA_API_KEY      = "fe21bc7b-e17c-4c0c-8f6e-8beab658804e"
-GEMINI_API_KEY    = "AIzaSyCupHa8xpgwECh299cQ9_OL3OVBbGYl38A"
-CLAUDE_API_KEY    = "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"
-ANTHROPIC_API_KEY = "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"
-GROQ_API_KEY      = "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"
-ELEVENLABS_API_KEY= "sk_fdc13676018c9820a3a429bf3cf8d1acedddf2f211491fbe"
-DEEPGRAM_API_KEY  = "391bf04405ae6f72af4181e3101b6aa9e7820d7f"
+NOVA_API_KEY       = os.getenv("NOVA_API_KEY", "")
+GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY", "")
+CLAUDE_API_KEY     = os.getenv("CLAUDE_API_KEY", "")
+ANTHROPIC_API_KEY  = os.getenv("ANTHROPIC_API_KEY", CLAUDE_API_KEY)
+GROQ_API_KEY       = os.getenv("GROQ_API_KEY", "")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+DEEPGRAM_API_KEY   = os.getenv("DEEPGRAM_API_KEY", "")
 
 # Amazon Bedrock (AWS)
-AMAZON_ACCESS_KEY = "BedrockAPIKey-84vr-at-717090908379"
-AMAZON_SECRET_KEY = "ABSKQmVkcm9ja0FQSUtleS04NHZyLWF0LTcxNzA5MDkwODM3OTpuTkJVcGZ1blEzZldROUlzd3ZoK1piK2VjdGl5Y1dpYWhsWWsrRWNBYUhyeFc2V3JZSFMrN3YzcStMRT0"
-AMAZON_REGION     = "us-east-1"
+AMAZON_ACCESS_KEY = os.getenv("AMAZON_ACCESS_KEY", "")
+AMAZON_SECRET_KEY = os.getenv("AMAZON_SECRET_KEY", "")
+AMAZON_REGION     = os.getenv("AMAZON_REGION", "us-east-1")
 # ═══════════════════════════════════════════════════════
 # STOCK MEDIA
 # ═══════════════════════════════════════════════════════
-PEXELS_API_KEY        = "udmGMPeNWjWQ81FebJu2nEi4ruWEs87zqGOIGNEAMonvC1d01d9hCkDj"
-PIXABAY_API_KEY       = "55350436-52eb07ed9727bda1d85df8c99"
+PEXELS_API_KEY        = os.getenv("PEXELS_API_KEY", "")
+PIXABAY_API_KEY       = os.getenv("PIXABAY_API_KEY", "")
+COVERR_API_KEY        = os.getenv("COVERR_API_KEY", "")
+VIDEEZY_CLIENT_ID     = os.getenv("VIDEEZY_CLIENT_ID", "")
+VIDEEZY_CLIENT_SECRET = os.getenv("VIDEEZY_CLIENT_SECRET", "")
+YOUTUBE_API_KEY       = os.getenv("YOUTUBE_API_KEY", "")
+JAMENDO_CLIENT_ID     = os.getenv("JAMENDO_CLIENT_ID", "")
+FREESOUND_API_KEY     = os.getenv("FREESOUND_API_KEY", "")
 
-COVERR_API_KEY        = "648670b245348e76dddb3ee52960f232"
-VIDEEZY_CLIENT_ID     = "107242"
-VIDEEZY_CLIENT_SECRET = "EzFApuZurTkUw4wnu2RNDvdj"
-YOUTUBE_API_KEY       = "AIzaSyCEcP2KW3l_N6flKHhxanWD5Nkt3sK08XY"
-REPLICATE_API_KEY     = "r8_AXOQmjn1yy8AzgEgdMUomIwdxIMzRza2NZYDb"
-JAMENDO_CLIENT_ID     = "b72ab361"
-FREESOUND_API_KEY     = "lXPQoR31V3wHx7CVfQZUGuJgvNKUlAjqJETiSxRQ"
-
-POLLINATIONS_ENABLED = True
 USED_VIDEOS_FILE   = "used_videos.json"
 USED_SCRIPTS_FILE  = "used_scripts.json"
 MUSIC_CACHE_DIR    = "music_cache"
+META_AI_JOBS_DIR = os.getenv("META_AI_JOBS_DIR", "meta_ai_jobs")
+META_AI_CREATE_URL = os.getenv("META_AI_CREATE_URL", "https://meta.ai/create")
+META_AI_CHROME_PROFILE_DIR = os.getenv("META_AI_CHROME_PROFILE_DIR", "")
+META_AI_CHARACTER_IMAGE = os.getenv("META_AI_CHARACTER_IMAGE", "")
+META_AI_BROWSER_CHANNEL = os.getenv("META_AI_BROWSER_CHANNEL", "chromium")
+META_AI_HEADLESS = os.getenv("META_AI_HEADLESS", "false").lower() in {"1", "true", "yes"}
+META_AI_TIMEOUT_SECONDS = int(os.getenv("META_AI_TIMEOUT_SECONDS", "900"))
+META_AI_MAX_RETRIES = int(os.getenv("META_AI_MAX_RETRIES", "2"))
+META_SCENE_COUNT = 3
+META_SCENE_DURATION = 10
 
 
 
@@ -71,7 +80,7 @@ VIDEO_CRF     = 16     # Lower CRF = higher quality
 CHANNEL_VOICES = {
     "channel_1": "aura-2-zeus-en",      # Psychology: Deep, commanding, dramatic
     "channel_2": "aura-2-orpheus-en",   # History: Authoritative, discovery-channel vibe
-    "channel_3": "aura-2-atlas-en",     # Declutter: Friendly, energetic, helpful
+    "channel_3": "aura-2-atlas-en",     # Kids history: Friendly, energetic storyteller
     "channel_4": "aura-odysseus-en",    # Stoic: Calm, steady, philosophical
 }
 
@@ -79,7 +88,7 @@ CHANNEL_VOICES = {
 EDGE_VOICES = {
     "channel_1": "en-US-GuyNeural",      # Male, energetic
     "channel_2": "en-GB-RyanNeural",      # Male, British, serious
-    "channel_3": "en-US-JennyNeural",     # Female, warm, friendly
+    "channel_3": "en-US-GuyNeural",       # Milo: fixed energetic male narrator
     "channel_4": "en-US-ChristopherNeural", # Male, deep, authoritative
 }
 
@@ -127,16 +136,25 @@ CHANNELS = [
     },
     {
         "id": "channel_3",
-        "name": "Digital & Home Declutter", # PIVOT: From General Hacks to Niche Utility
-        "niche": "Specific tutorials on organizing your digital life, smart home setups, and minimalist lifestyle hacks",
-        "keywords": ["digital minimalism", "organizing hacks", "clean desk setup", "productive lifestyle", "smart home"],
+        "name": "Epic History Kids",
+        "handle": "@EpicHistoryKids",
+        "niche": "Kid-safe historical stories for ages 7-12 about ancient civilizations, famous people, inventions, discoveries, and everyday life, told with simple vocabulary, curiosity-first hooks, accurate facts, and no graphic violence",
+        "keywords": ["history for kids", "kids history", "ancient civilizations", "historical stories", "famous people in history", "educational stories"],
         "client_secrets_file": "credentials/channel3_secrets.json",
         "token_file": "credentials/channel3_token.json",
         "use_voice": True,
-        "music_mood": "calm_lofi",
-        "category_id": "26",
-        "hook_style": "before_after", # Show the mess first, then the clean result
-        "script_type": "tutorial",
+        "voice_provider": "edge",
+        "music_mood": "playful",
+        "category_id": "27",
+        "hook_style": "curiosity_adventure",
+        "script_type": "kids_history",
+        "made_for_kids": True,
+        "media_source": "meta_ai_browser",
+        "character_name": "Milo",
+        "target_duration": 30,
+        "end_screen_duration": 0,
+        "seamless_scenes": True,
+        "strict_voice": True,
     },
     {
         "id": "channel_4",

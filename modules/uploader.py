@@ -105,6 +105,7 @@ def upload_video(
     """Uploads video with SEO-optimized metadata."""
     channel_name = channel_config["name"]
     category_id  = channel_config.get("category_id", "22")
+    made_for_kids = bool(channel_config.get("made_for_kids", False))
 
     youtube = _get_authenticated_service(
         channel_config["client_secrets_file"],
@@ -135,7 +136,7 @@ def upload_video(
         },
         "status": {
             "privacyStatus": "public",
-            "selfDeclaredMadeForKids": False,
+            "selfDeclaredMadeForKids": made_for_kids,
             "embeddable": True,
             # madeShort signals to YouTube this is a Short (vertical ≤60s + #Shorts in title)
         },
