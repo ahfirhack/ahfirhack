@@ -1,0 +1,55 @@
+name: One-Time Low-View Cleanup (Channels 2 and 4)
+
+on:
+  schedule:
+    # After YouTube's midnight Pacific quota reset. The audited timestamp and
+    # exact channel IDs prevent this from affecting Channel 3 or future videos.
+    - cron: "15 9 * * *"
+  workflow_dispatch:
+    inputs:
+      max_delete_per_channel:
+        description: Maximum audited videos to delete from each channel
+        required: true
+        default: "90"
+        type: string
+
+concurrency:
+  group: youtube-low-view-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install YouTube client
+        run: |
+          pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
+
+      - name: Restore Channel 2 and Channel 4 credentials
+        run: |
+          mkdir -p credentials
+          printf '%s' "${{ secrets.CHANNEL2_SECRETS_B64 }}" | base64 --decode > credentials/channel2_secrets.json
+          printf '%s' "${{ secrets.CHANNEL4_SECRETS_B64 }}" | base64 --decode > credentials/channel4_secrets.json
+          printf '%s' "${{ secrets.CHANNEL2_TOKEN_B64 }}" | base64 --decode > credentials/channel2_token.json
+          printf '%s' "${{ secrets.CHANNEL4_TOKEN_B64 }}" | base64 --decode > credentials/channel4_token.json
+
+      - name: Delete audited videos below 300 views
+        env:
+          MAX_DELETE: ${{ inputs.max_delete_per_channel || '90' }}
+        run: |
+          python -u cleanup_low_view_videos.py \
+            --execute \
+            --max-delete-per-channel "$MAX_DELETE"

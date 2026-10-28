@@ -137,6 +137,9 @@ CHANNELS = [
         "category_id": "27",
         "hook_style": "question_unsolved", # Start with a mystery no one can explain
         "script_type": "documentary",
+        "strict_ai_prompts": True,
+        "track_prompt_history": True,
+        "strict_upload_dedup": True,
     },
     {
         "id": "channel_3",
@@ -177,5 +180,8 @@ CHANNELS = [
         "category_id": "27",
         "hook_style": "pain_point", # Start with a common modern struggle (e.g., burnout)
         "script_type": "educational",
+        "strict_ai_prompts": True,
+        "track_prompt_history": True,
+        "strict_upload_dedup": True,
     },
 ]

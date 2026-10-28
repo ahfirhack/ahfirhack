@@ -144,6 +144,12 @@ def _detect_niche_key(niche: str) -> str:
     if any(w in n for w in ["karma", "revenge", "justice", "betrayal", "storytelling"]):
         return "storytelling"
 
+    # Modern Stoicism must be detected before generic history words. Channel 4
+    # includes the phrase "ancient wisdom", which previously misclassified it
+    # as documentary content and selected Channel 2's history fallback.
+    if any(w in n for w in ["stoic", "philosophy", "mental health", "discipline", "mindset"]):
+        return "educational"
+
     # NEW: History Mystery (Deep Dives)
     if any(w in n for w in ["history", "ancient", "mystery", "unexplained", "unsolved"]):
         return "documentary"
@@ -151,10 +157,6 @@ def _detect_niche_key(niche: str) -> str:
     # NEW: Digital & Home Declutter (Specific Utility)
     if any(w in n for w in ["declutter", "organizing", "setup", "minimalism", "productivity"]):
         return "tutorial"
-
-    # NEW: Modern Stoicism (Men's Mental Health)
-    if any(w in n for w in ["stoic", "philosophy", "mental health", "discipline", "mindset"]):
-        return "educational"
 
     return "psychology" # Default to psychology (highest viral potential)
 
