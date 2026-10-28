@@ -20,7 +20,7 @@ from config import GEMINI_API_KEY, GROQ_API_KEY, CLAUDE_API_KEY, NOVA_API_KEY, A
 GROQ_URL   = "https://api.groq.com/openai/v1/chat/completions"
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
-    "gemini-2.0-flash:generateContent"
+    "gemini-3.8-flash:generateContent"
 )
 CLAUDE_URL = "https://api.anthropic.com/v1/messages"
 NOVA_URL   = "https://api.nova.ai/v1/chat/completions"
@@ -258,7 +258,7 @@ def _try_groq(prompt: str) -> dict | None:
     try:
         resp = requests.post(GROQ_URL,
             headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-            json={"model": "llama-3.3-70b-versatile",
+            json={"model": "openai/gpt-oss-20b",
                   "messages": [{"role": "user", "content": prompt}],
                   "temperature": 0.9, "max_tokens": 500},
             timeout=(8, 20))  # (connect_timeout, read_timeout)
@@ -281,7 +281,11 @@ def _try_gemini(prompt: str) -> dict | None:
         resp = requests.post(GEMINI_URL,
             params={"key": GEMINI_API_KEY},
             json={"contents": [{"parts": [{"text": prompt}]}],
-                  "generationConfig": {"temperature": 0.9, "maxOutputTokens": 500}},
+                  "generationConfig": {
+                      "temperature": 0.9,
+                      "maxOutputTokens": 500,
+                      "responseMimeType": "application/json",
+                  }},
             timeout=(8, 25))
         if resp.status_code == 429:
             print("[ScriptGen] Gemini rate-limited -> next")
@@ -302,7 +306,7 @@ def _try_claude(prompt: str) -> dict | None:
         resp = requests.post(CLAUDE_URL,
             headers={"x-api-key": CLAUDE_API_KEY, "anthropic-version": "2023-06-01",
                      "Content-Type": "application/json"},
-            json={"model": "claude-3-5-sonnet-20241022", "max_tokens": 500,
+            json={"model": "claude-sonnet-4-6", "max_tokens": 500,
                   "messages": [{"role": "user", "content": prompt}]},
             timeout=(8, 25))
         if resp.status_code in (429, 401, 403):
@@ -340,7 +344,7 @@ def _try_amazon(prompt: str) -> dict | None:
             aws_secret_access_key=secret_key,
         )
         response = client.invoke_model(
-            modelId="anthropic.claude-3-5-sonnet-20241022-v2:0",
+            modelId="us.anthropic.claude-haiku-4-5-20251001-v1:0",
             body=json.dumps({
                 "max_tokens": 500,
                 "messages": [{"role": "user", "content": prompt}],
