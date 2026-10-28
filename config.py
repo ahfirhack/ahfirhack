@@ -124,6 +124,9 @@ CHANNELS = [
         "category_id": "27",
         "hook_style": "surprising",
         "script_type": "educational",
+        "strict_ai_prompts": True,
+        "track_prompt_history": True,
+        "strict_upload_dedup": True,
     },
     {
         "id": "channel_2",

@@ -1,4 +1,4 @@
-"""Remove the audited low-view backlog from YouTube Channels 2 and 4.
+"""Remove the audited low-view backlog from YouTube Channels 1, 2, and 4.
 
 This cleanup is deliberately bounded by exact authenticated channel IDs and an
 audit timestamp. It cannot select Channel 3 or uploads created after the audit.
@@ -20,8 +20,13 @@ from modules.uploader import _get_authenticated_service
 
 VIEW_THRESHOLD = 300
 AUDIT_CUTOFF_UTC = dt.datetime.fromisoformat("2026-10-28T22:01:52+00:00")
-DEFAULT_MAX_DELETE_PER_CHANNEL = 90
+DEFAULT_MAX_DELETE_PER_CHANNEL = 60
+MAX_DELETE_PER_CHANNEL = 90
 TARGETS = {
+    "channel_1": {
+        "youtube_channel_id": "UC2qXBEvGGgoI0N_lJX1anYg",
+        "youtube_name": "AI & Tech",
+    },
     "channel_2": {
         "youtube_channel_id": "UC7hAw2AAMwxpEEWnCExd7Rw",
         "youtube_name": "The Unveiling",
@@ -196,14 +201,14 @@ def main() -> int:
     )
     parser.add_argument(
         "--channel",
-        choices=("all", "channel_2", "channel_4"),
+        choices=("all", "channel_1", "channel_2", "channel_4"),
         default="all",
     )
     args = parser.parse_args()
-    if not 1 <= args.max_delete_per_channel <= DEFAULT_MAX_DELETE_PER_CHANNEL:
+    if not 1 <= args.max_delete_per_channel <= MAX_DELETE_PER_CHANNEL:
         parser.error(
             f"--max-delete-per-channel must be between 1 and "
-            f"{DEFAULT_MAX_DELETE_PER_CHANNEL}"
+            f"{MAX_DELETE_PER_CHANNEL}"
         )
 
     channels = list(TARGETS) if args.channel == "all" else [args.channel]
