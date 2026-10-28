@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   upload:
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 180
 
     permissions:
@@ -40,16 +40,24 @@ jobs:
           pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
           python -m playwright install chromium --with-deps
 
-      - name: Validate persistent Meta AI directories
+      - name: Restore Meta AI browser session
         env:
-          META_AI_CHROME_PROFILE_DIR: ${{ vars.META_AI_CHROME_PROFILE_DIR }}
-          META_AI_JOBS_DIR: ${{ vars.META_AI_JOBS_DIR }}
+          META_AI_STORAGE_STATE_B64: ${{ secrets.META_AI_STORAGE_STATE_B64 }}
         run: |
-          if [ -z "$META_AI_CHROME_PROFILE_DIR" ] || [ -z "$META_AI_JOBS_DIR" ]; then
-            echo "Set repository variables META_AI_CHROME_PROFILE_DIR and META_AI_JOBS_DIR to absolute persistent paths on this self-hosted runner."
+          if [ -z "$META_AI_STORAGE_STATE_B64" ]; then
+            echo "Missing META_AI_STORAGE_STATE_B64. Run python main.py --meta-login locally and publish the exported storage state as documented."
             exit 1
           fi
-          mkdir -p "$META_AI_CHROME_PROFILE_DIR" "$META_AI_JOBS_DIR"
+          printf '%s' "$META_AI_STORAGE_STATE_B64" | base64 --decode | gzip --decompress > "$RUNNER_TEMP/meta-ai-storage-state.json"
+          python -c 'import json, os; json.load(open(os.environ["RUNNER_TEMP"] + "/meta-ai-storage-state.json", encoding="utf-8"))'
+
+      - name: Restore permanent Milo reference
+        uses: actions/cache@v4
+        with:
+          path: meta_ai_state
+          key: meta-ai-character-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            meta-ai-character-${{ runner.os }}-
 
       - name: Restore credentials
         run: |
@@ -92,9 +100,9 @@ jobs:
           VIDEEZY_CLIENT_ID:     ${{ secrets.VIDEEZY_CLIENT_ID }}
           VIDEEZY_CLIENT_SECRET: ${{ secrets.VIDEEZY_CLIENT_SECRET }}
           YOUTUBE_API_KEY:       ${{ secrets.YOUTUBE_API_KEY }}
-          META_AI_CHROME_PROFILE_DIR: ${{ vars.META_AI_CHROME_PROFILE_DIR }}
-          META_AI_JOBS_DIR:      ${{ vars.META_AI_JOBS_DIR }}
-          META_AI_CHARACTER_IMAGE: ${{ vars.META_AI_CHARACTER_IMAGE }}
+          META_AI_STORAGE_STATE_FILE: ${{ runner.temp }}/meta-ai-storage-state.json
+          META_AI_JOBS_DIR:      ${{ github.workspace }}/meta_ai_jobs
+          META_AI_CHARACTER_IMAGE: ${{ github.workspace }}/meta_ai_state/milo-reference.png
           META_AI_BROWSER_CHANNEL: chromium
           META_AI_HEADLESS: "false"
           META_AI_TIMEOUT_SECONDS: "900"

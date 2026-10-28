@@ -1,9 +1,10 @@
 """Automated Meta AI Create browser workflow for Channel 3.
 
-This uses a dedicated persistent Chromium profile instead of a media API key.
-A person signs into Meta once with ``bootstrap_meta_login``. Scheduled
-self-hosted GitHub Actions runs then reuse that profile, create a permanent Milo
-reference image when needed, render three scenes, and download every result.
+This uses a Playwright browser session instead of a media API key. A person
+signs into Meta once with ``bootstrap_meta_login`` and exports Playwright storage
+state. GitHub-hosted Actions jobs restore that encrypted secret, create a
+permanent Milo reference image when needed, render three scenes, and download
+every result.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from config import (
     META_AI_HEADLESS,
     META_AI_JOBS_DIR,
     META_AI_MAX_RETRIES,
+    META_AI_STORAGE_STATE_FILE,
     META_AI_TIMEOUT_SECONDS,
     META_SCENE_COUNT,
     META_SCENE_DURATION,
@@ -239,22 +241,40 @@ def create_job(channel: dict, story: dict) -> tuple[dict, Path]:
     return manifest, job_dir
 
 
-def _profile_dir() -> Path:
+def _profile_dir(*, required: bool = False) -> Path | None:
     if not META_AI_CHROME_PROFILE_DIR.strip():
-        raise MetaAIAutomationError(
-            "META_AI_CHROME_PROFILE_DIR is required. Set it to an absolute, "
-            "persistent directory on the self-hosted runner."
-        )
+        if required:
+            raise MetaAIAutomationError(
+                "META_AI_CHROME_PROFILE_DIR is required for the one-time Meta "
+                "login bootstrap. Set it to a local writable directory."
+            )
+        return None
     path = Path(META_AI_CHROME_PROFILE_DIR).expanduser().resolve()
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def _character_image_path(profile_dir: Path) -> Path:
+def _storage_state_path(*, required: bool = False) -> Path | None:
+    if not META_AI_STORAGE_STATE_FILE.strip():
+        if required:
+            raise MetaAIAutomationError(
+                "META_AI_STORAGE_STATE_FILE is required on a GitHub-hosted "
+                "runner. Restore it from the META_AI_STORAGE_STATE_B64 secret."
+            )
+        return None
+    path = Path(META_AI_STORAGE_STATE_FILE).expanduser().resolve()
+    if required and not path.is_file():
+        raise MetaAIAutomationError(f"Meta AI storage-state file is missing: {path}")
+    return path
+
+
+def _character_image_path(profile_dir: Path | None) -> Path:
     if META_AI_CHARACTER_IMAGE.strip():
         path = Path(META_AI_CHARACTER_IMAGE).expanduser().resolve()
-    else:
+    elif profile_dir is not None:
         path = profile_dir.parent / "meta_ai_state" / "milo-reference.png"
+    else:
+        path = Path("meta_ai_state/milo-reference.png").resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -270,19 +290,34 @@ def _load_playwright():
     return sync_playwright
 
 
-def _launch_context(playwright, profile_dir: Path, *, headless: bool):
-    kwargs = {
-        "user_data_dir": str(profile_dir),
+def _launch_context(playwright, profile_dir: Path | None, *, headless: bool):
+    launch_kwargs = {
         "headless": headless,
-        "accept_downloads": True,
-        "viewport": {"width": 1440, "height": 1100},
         "args": ["--disable-dev-shm-usage"],
     }
     if META_AI_BROWSER_CHANNEL.strip():
-        kwargs["channel"] = META_AI_BROWSER_CHANNEL.strip()
-    context = playwright.chromium.launch_persistent_context(**kwargs)
+        launch_kwargs["channel"] = META_AI_BROWSER_CHANNEL.strip()
+
+    context_kwargs = {
+        "accept_downloads": True,
+        "viewport": {"width": 1440, "height": 1100},
+    }
+    if profile_dir is not None:
+        context = playwright.chromium.launch_persistent_context(
+            user_data_dir=str(profile_dir),
+            **launch_kwargs,
+            **context_kwargs,
+        )
+        browser = None
+    else:
+        state_path = _storage_state_path(required=True)
+        browser = playwright.chromium.launch(**launch_kwargs)
+        context = browser.new_context(
+            storage_state=str(state_path),
+            **context_kwargs,
+        )
     context.set_default_timeout(30_000)
-    return context
+    return context, browser
 
 
 def _visible_last(locator):
@@ -337,8 +372,8 @@ def _require_logged_in_editor(page, debug_path: Path | None = None):
         debug_path.parent.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(debug_path), full_page=True)
     raise MetaAILoginRequired(
-        "Meta AI prompt editor was not available. Run `python main.py "
-        "--meta-login` once on the self-hosted runner, complete the Meta login, "
+        "Meta AI prompt editor was not available. Re-run `python main.py "
+        "--meta-login`, update the META_AI_STORAGE_STATE_B64 GitHub secret, "
         "and then rerun the workflow."
     )
 
@@ -532,7 +567,7 @@ def _extract_last_frame(video_path: Path, frame_path: Path) -> None:
         raise MetaAIAutomationError("Could not extract the Meta scene continuation frame.")
 
 
-def _ensure_character_reference(context, profile_dir: Path, job_dir: Path) -> Path:
+def _ensure_character_reference(context, profile_dir: Path | None, job_dir: Path) -> Path:
     character_path = _character_image_path(profile_dir)
     if character_path.is_file() and character_path.stat().st_size >= 10_000:
         return character_path
@@ -566,12 +601,13 @@ def ensure_rendered_clips(manifest: dict, job_dir: Path) -> list[str]:
         return collect_rendered_clips(manifest, job_dir)
 
     profile_dir = _profile_dir()
+    state_path = _storage_state_path(required=profile_dir is None)
     sync_playwright = _load_playwright()
     manifest["status"] = "rendering"
     _save_manifest(manifest, job_dir)
 
     with sync_playwright() as playwright:
-        context = _launch_context(playwright, profile_dir, headless=META_AI_HEADLESS)
+        context, browser = _launch_context(playwright, profile_dir, headless=META_AI_HEADLESS)
         try:
             character_path = _ensure_character_reference(context, profile_dir, job_dir)
             prior_frame: Path | None = None
@@ -613,16 +649,20 @@ def ensure_rendered_clips(manifest: dict, job_dir: Path) -> list[str]:
                         f"Scene {scene['index']} failed after {META_AI_MAX_RETRIES} attempts: {last_error}"
                     ) from last_error
         finally:
+            if state_path is not None:
+                context.storage_state(path=str(state_path))
             context.close()
+            if browser is not None:
+                browser.close()
     return collect_rendered_clips(manifest, job_dir)
 
 
 def bootstrap_meta_login() -> None:
     """Open the dedicated persistent profile for the one-time interactive login."""
-    profile_dir = _profile_dir()
+    profile_dir = _profile_dir(required=True)
     sync_playwright = _load_playwright()
     with sync_playwright() as playwright:
-        context = _launch_context(playwright, profile_dir, headless=False)
+        context, browser = _launch_context(playwright, profile_dir, headless=False)
         page = context.pages[0] if context.pages else context.new_page()
         try:
             _open_create_page(page)
@@ -630,8 +670,16 @@ def bootstrap_meta_login() -> None:
             input("[MetaAI] When the Create prompt box is visible, press Enter here: ")
             _require_logged_in_editor(page)
             print(f"[MetaAI] Login verified. Persistent profile: {profile_dir}")
+            state_path = Path(
+                META_AI_STORAGE_STATE_FILE or "meta_ai_storage_state.json"
+            ).expanduser().resolve()
+            state_path.parent.mkdir(parents=True, exist_ok=True)
+            context.storage_state(path=str(state_path))
+            print(f"[MetaAI] Exported GitHub-hosted runner session: {state_path}")
         finally:
             context.close()
+            if browser is not None:
+                browser.close()
 
 
 def mark_job_complete(job_dir: Path, video_id: str) -> None:

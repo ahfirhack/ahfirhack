@@ -72,14 +72,9 @@ Go to: **Repo → Settings → Secrets and variables → Actions → New reposit
 
 ## STEP 5 — Enable GitHub Actions
 
-Register a Linux x64 machine as a self-hosted runner from **Repo → Settings →
-Actions → Runners → New self-hosted runner**. Install and start it using a
-dedicated OS account. The Meta profile and jobs directories must be writable by
-that same account.
-
-Under **Repo → Settings → Secrets and variables → Actions → Variables**, add
-absolute paths for `META_AI_CHROME_PROFILE_DIR` and `META_AI_JOBS_DIR` as shown
-in the Meta section below. Then go to **Repo → Actions** and enable workflows.
+The workflow uses GitHub's hosted `ubuntu-latest` runner. Complete the one-time
+Meta browser-session export described below, add it as a repository secret, and
+then go to **Repo → Actions** and enable workflows.
 
 The workflow runs automatically every eight hours.
 You can also trigger it manually: **Actions → daily_upload → Run workflow**
@@ -121,30 +116,24 @@ image automatically. Scene 1 uses that reference; scenes 2 and 3 use the exact
 final frame of the preceding scene. The assembler normalizes the three clips to
 ten seconds each and joins them without black or empty gap frames.
 
-This requires a **Linux self-hosted GitHub Actions runner**. GitHub-hosted
-runners are disposable and cannot reliably retain the Meta login. Create these
-repository variables with absolute paths on the self-hosted machine:
-
-| Repository variable | Example |
-|---|---|
-| `META_AI_CHROME_PROFILE_DIR` | `/opt/youtube-bot/meta-chrome-profile` |
-| `META_AI_JOBS_DIR` | `/opt/youtube-bot/meta-ai-jobs` |
-| `META_AI_CHARACTER_IMAGE` | `/opt/youtube-bot/meta-ai-state/milo-reference.png` (optional) |
-
-Install the project once on that runner and complete the only interactive Meta
-login. Use the same profile path configured in GitHub:
+GitHub-hosted machines are fresh for every job, so the Meta login is restored
+from an encrypted GitHub Actions secret. Complete one local interactive login,
+export Playwright storage state, and publish its compressed base64 value:
 
 ```bash
 pip install -r requirements.txt
 python -m playwright install chromium --with-deps
-export META_AI_CHROME_PROFILE_DIR=/opt/youtube-bot/meta-chrome-profile
+export META_AI_CHROME_PROFILE_DIR="$PWD/.meta-ai-profile"
+export META_AI_STORAGE_STATE_FILE="$PWD/meta_ai_storage_state.json"
 python main.py --meta-login
+gzip -c "$META_AI_STORAGE_STATE_FILE" | base64 -w 0 | gh secret set META_AI_STORAGE_STATE_B64
 ```
 
-After bootstrap, the scheduled workflow opens the saved profile through Xvfb,
-creates or resumes a job, generates and downloads all three videos, assembles
-the Short, and uploads it. If Meta expires the session, the workflow stops
-before upload and reports that `--meta-login` must be run again.
+The workflow restores that session into Chromium through Xvfb and caches only
+the non-sensitive permanent Milo reference image. It then generates all three
+videos, assembles the Short, and uploads it. If Meta expires or challenges the
+session, the workflow stops before upload; repeat the login/export command to
+refresh the secret.
 
 Prepare a prompt job without rendering or uploading:
 
