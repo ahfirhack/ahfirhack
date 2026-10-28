@@ -46,7 +46,6 @@ META_AI_JOBS_DIR = os.getenv("META_AI_JOBS_DIR", "meta_ai_jobs")
 META_AI_CREATE_URL = os.getenv("META_AI_CREATE_URL", "https://meta.ai/create")
 META_AI_CHROME_PROFILE_DIR = os.getenv("META_AI_CHROME_PROFILE_DIR", "")
 META_AI_STORAGE_STATE_FILE = os.getenv("META_AI_STORAGE_STATE_FILE", "")
-META_AI_CHARACTER_IMAGE = os.getenv("META_AI_CHARACTER_IMAGE", "")
 META_AI_BROWSER_CHANNEL = os.getenv("META_AI_BROWSER_CHANNEL", "chromium")
 META_AI_HEADLESS = os.getenv("META_AI_HEADLESS", "false").lower() in {"1", "true", "yes"}
 META_AI_TIMEOUT_SECONDS = int(os.getenv("META_AI_TIMEOUT_SECONDS", "900"))

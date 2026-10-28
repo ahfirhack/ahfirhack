@@ -347,7 +347,6 @@ def prepare_meta_job_only() -> str:
         manifest, job_dir = create_job(channel, story)
         print(f"[MetaAI] Created job: {manifest['job_id']}")
 
-    print(f"[MetaAI] Character prompt: {job_dir / 'milo_reference_prompt.txt'}")
     print(f"[MetaAI] Video prompt batch: {job_dir / 'meta_prompts.txt'}")
     print("[MetaAI] The scheduled browser runner will render this job automatically.")
     return str(job_dir)

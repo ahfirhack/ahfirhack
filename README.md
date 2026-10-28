@@ -111,10 +111,11 @@ Short scripts (≤24 words) stay on screen for the full video duration.
 
 Channel 3 uses Playwright to control `https://meta.ai/create` through a
 dedicated persistent Chromium profile. It does not use Muse Automation or a
-media-generation API key. The first run creates a permanent Milo reference
-image automatically. Scene 1 uses that reference; scenes 2 and 3 use the exact
-final frame of the preceding scene. The assembler normalizes the three clips to
-ten seconds each and joins them without black or empty gap frames.
+media-generation API key. Every video request includes the same permanent Milo
+character, style, and continuity prompt. Scene 1 is generated directly as a
+video; scenes 2 and 3 also use the exact final frame of the preceding video.
+The assembler normalizes the three clips to ten seconds each and joins them
+without black or empty gap frames.
 
 GitHub-hosted machines are fresh for every job, so the Meta login is restored
 from an encrypted GitHub Actions secret. Complete one local interactive login,
@@ -129,11 +130,15 @@ python main.py --meta-login
 gzip -c "$META_AI_STORAGE_STATE_FILE" | base64 -w 0 | gh secret set META_AI_STORAGE_STATE_B64
 ```
 
-The workflow restores that session into Chromium through Xvfb and caches only
-the non-sensitive permanent Milo reference image. It then generates all three
-videos, assembles the Short, and uploads it. If Meta expires or challenges the
-session, the workflow stops before upload; repeat the login/export command to
-refresh the secret.
+The workflow restores that session into Chromium through Xvfb, generates all
+three videos from the permanent prompt, assembles the Short, and uploads it. If
+Meta expires or challenges the session, the workflow stops before upload;
+repeat the login/export command to refresh the secret.
+
+The signed-in Meta account must be eligible for Vibes video generation and be
+18 or older. Check `https://meta.ai/vibes` before exporting the session. If it
+shows an age restriction or Meta replies that video generation is unavailable,
+the pipeline fails immediately and does not substitute still images or GIFs.
 
 Prepare a prompt job without rendering or uploading:
 
@@ -146,6 +151,16 @@ Run the complete automated Channel 3 pipeline only:
 ```bash
 python main.py --once --channel 3
 ```
+
+Run the same focused test on a GitHub-hosted runner:
+
+```bash
+gh workflow run daily_upload.yml -f channel=3 -f meta_timeout_seconds=300
+```
+
+Manual dispatches can select one channel; scheduled runs continue to process
+all four. Failed Meta runs preserve unfinished scenes in the Actions cache and
+upload a seven-day diagnostic artifact.
 
 ---
 

@@ -7,6 +7,7 @@ credentials/secrets.json
 meta_ai_jobs/
 .meta-ai-profile/
 meta_ai_storage_state.json
+meta_ai_debug*.png
 output_videos/
 temp/
 music_cache/

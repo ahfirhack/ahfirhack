@@ -2,8 +2,8 @@
 
 This uses a Playwright browser session instead of a media API key. A person
 signs into Meta once with ``bootstrap_meta_login`` and exports Playwright storage
-state. GitHub-hosted Actions jobs restore that encrypted secret, create a
-permanent Milo reference image when needed, render three scenes, and download
+state. GitHub-hosted Actions jobs restore that encrypted secret, inject the same
+permanent Milo prompt into every request, render three video scenes, and download
 every result.
 """
 
@@ -19,7 +19,6 @@ from pathlib import Path
 
 from config import (
     META_AI_BROWSER_CHANNEL,
-    META_AI_CHARACTER_IMAGE,
     META_AI_CHROME_PROFILE_DIR,
     META_AI_CREATE_URL,
     META_AI_HEADLESS,
@@ -126,7 +125,8 @@ def _split_narration(script: str, count: int) -> list[str]:
 
 def _scene_prompt(index: int, narration: str, topic: str) -> str:
     attachment = (
-        "The attached image is the permanent Milo character reference."
+        "There is no reference attachment for this opening scene. Build Milo "
+        "exactly from the permanent CHARACTER LOCK below."
         if index == 1
         else (
             "The attached image is the exact final frame of the previous scene. "
@@ -151,22 +151,13 @@ def _scene_prompt(index: int, narration: str, topic: str) -> str:
     )
 
 
-def _character_prompt() -> str:
-    return " ".join(
-        f"""Create one IMAGE, not a video. {CHARACTER_BIBLE} {STYLE_BIBLE}
-        Show one single full-body Milo in a neutral three-quarter pose on a
-        clean light background. Keep his complete body visible. No character
-        sheet, multiple views, text, props, scenery, or other characters.""".split()
-    )
-
-
 def _render_prompt_markdown(manifest: dict) -> str:
     lines = [
         f"# Meta AI automated render pack: {manifest['story']['title']}", "",
         "This pack is consumed automatically by the Playwright browser runner.",
-        "The first run creates a permanent Milo reference. Each later scene",
-        "receives the prior scene's final frame for visual continuity.", "",
-        "## Character reference", "", _character_prompt(),
+        "Every scene receives the same permanent Milo character/style prompt.",
+        "Scenes 2 and 3 also receive the prior video's final frame for visual",
+        "continuity. All three requested outputs are videos.",
     ]
     for scene in manifest["scenes"]:
         lines.extend([
@@ -235,9 +226,6 @@ def create_job(channel: dict, story: dict) -> tuple[dict, Path]:
     (job_dir / "meta_prompts.txt").write_text(
         "\n\n".join(scene["prompt"] for scene in scenes) + "\n", encoding="utf-8"
     )
-    (job_dir / "milo_reference_prompt.txt").write_text(
-        _character_prompt() + "\n", encoding="utf-8"
-    )
     return manifest, job_dir
 
 
@@ -265,17 +253,6 @@ def _storage_state_path(*, required: bool = False) -> Path | None:
     path = Path(META_AI_STORAGE_STATE_FILE).expanduser().resolve()
     if required and not path.is_file():
         raise MetaAIAutomationError(f"Meta AI storage-state file is missing: {path}")
-    return path
-
-
-def _character_image_path(profile_dir: Path | None) -> Path:
-    if META_AI_CHARACTER_IMAGE.strip():
-        path = Path(META_AI_CHARACTER_IMAGE).expanduser().resolve()
-    elif profile_dir is not None:
-        path = profile_dir.parent / "meta_ai_state" / "milo-reference.png"
-    else:
-        path = Path("meta_ai_state/milo-reference.png").resolve()
-    path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
 
@@ -379,23 +356,25 @@ def _require_logged_in_editor(page, debug_path: Path | None = None):
 
 
 def _attach_image(page, image_path: Path) -> None:
+    # Meta's landing page contains hidden file inputs for suggestion cards.
+    # Always open the composer attachment dialog first so we do not upload the
+    # continuation frame into an unrelated template such as "Victorian era".
+    add_button = _visible_last(
+        page.locator("[data-testid='composer-add-attachment-button']")
+    )
+    if add_button is None:
+        add_button = _visible_last(
+            page.get_by_role("button", name=re.compile(r"add attachment", re.I))
+        )
+    if add_button is None:
+        raise MetaAIAutomationError("Meta AI composer attachment button was not found.")
+
+    add_button.click()
+    page.wait_for_timeout(750)
     inputs = page.locator("input[type='file']")
     file_input = inputs.last if inputs.count() else None
     if file_input is None:
-        for name in (r"add", r"upload", r"attach", r"photo"):
-            try:
-                button = _visible_last(page.get_by_role("button", name=re.compile(name, re.I)))
-                if button is not None:
-                    button.click()
-                    page.wait_for_timeout(750)
-                    inputs = page.locator("input[type='file']")
-                    file_input = inputs.last if inputs.count() else None
-                    if file_input is not None:
-                        break
-            except Exception:
-                continue
-    if file_input is None:
-        raise MetaAIAutomationError("Meta AI image-upload control was not found.")
+        raise MetaAIAutomationError("Meta AI composer file input was not found.")
     file_input.set_input_files(str(image_path))
     page.wait_for_timeout(1_500)
 
@@ -431,16 +410,23 @@ def _submit_prompt(page, editor, prompt: str) -> None:
     except Exception:
         editor.press("Control+A")
         editor.type(prompt, delay=1)
+
+    # Use the exact composer control. Broad labels such as "create" or
+    # "generate" also match Meta's preset cards and can open a template modal
+    # without ever submitting the typed prompt.
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
-        for name in (r"create", r"generate", r"send", r"submit"):
-            try:
-                button = _visible_last(page.get_by_role("button", name=re.compile(name, re.I)))
-                if button is not None and button.is_enabled():
-                    button.click()
-                    return
-            except Exception:
-                continue
+        button = _visible_last(page.locator("[data-testid='composer-send-button']"))
+        if button is None:
+            button = _visible_last(
+                page.get_by_role("button", name=re.compile(r"^send$", re.I))
+            )
+        try:
+            if button is not None and button.is_enabled():
+                button.click()
+                return
+        except Exception:
+            pass
         page.wait_for_timeout(500)
     editor.press("Enter")
 
@@ -453,6 +439,19 @@ def _wait_for_media(page, media_kind: str, baseline: set[str]) -> str:
         if fresh:
             return fresh[-1]
         try:
+            unavailable = page.get_by_text(
+                re.compile(
+                    rf"{re.escape(media_kind)} generation is not available|"
+                    rf"cannot (?:create|generate) (?:a )?{re.escape(media_kind)}|"
+                    rf"can't (?:create|generate) (?:a )?{re.escape(media_kind)}",
+                    re.I,
+                )
+            )
+            if _visible_last(unavailable) is not None:
+                raise MetaAIAutomationError(
+                    f"Meta AI reports that {media_kind} generation is not "
+                    "available for the signed-in account."
+                )
             failure = page.get_by_text(
                 re.compile(r"couldn't generate|unable to generate|try again|generation failed", re.I)
             )
@@ -567,18 +566,6 @@ def _extract_last_frame(video_path: Path, frame_path: Path) -> None:
         raise MetaAIAutomationError("Could not extract the Meta scene continuation frame.")
 
 
-def _ensure_character_reference(context, profile_dir: Path | None, job_dir: Path) -> Path:
-    character_path = _character_image_path(profile_dir)
-    if character_path.is_file() and character_path.stat().st_size >= 10_000:
-        return character_path
-    print(f"[MetaAI] Creating permanent Milo reference -> {character_path}")
-    _generate_media(
-        context, _character_prompt(), character_path, "image", None,
-        job_dir / "debug" / "character-reference.png",
-    )
-    return character_path
-
-
 def collect_rendered_clips(manifest: dict, job_dir: Path) -> list[str]:
     renders_dir = job_dir / "renders"
     expected = [renders_dir / scene["filename"] for scene in manifest["scenes"]]
@@ -609,7 +596,6 @@ def ensure_rendered_clips(manifest: dict, job_dir: Path) -> list[str]:
     with sync_playwright() as playwright:
         context, browser = _launch_context(playwright, profile_dir, headless=META_AI_HEADLESS)
         try:
-            character_path = _ensure_character_reference(context, profile_dir, job_dir)
             prior_frame: Path | None = None
             for scene in manifest["scenes"]:
                 target = renders_dir / scene["filename"]
@@ -620,7 +606,9 @@ def ensure_rendered_clips(manifest: dict, job_dir: Path) -> list[str]:
                     prior_frame = frame_target
                     continue
 
-                attachment = prior_frame or character_path
+                # Scene 1 is generated directly from the permanent prompt.
+                # Later scenes receive only the preceding video's final frame.
+                attachment = prior_frame
                 last_error: Exception | None = None
                 for attempt in range(1, META_AI_MAX_RETRIES + 1):
                     try:

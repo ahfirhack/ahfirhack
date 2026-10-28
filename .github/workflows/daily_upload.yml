@@ -5,6 +5,23 @@ on:
     # Run every 8 hours: 0:00, 8:00, 16:00 UTC
     - cron: "0 */8 * * *"
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Channel to process (scheduled runs always process all channels)
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - "1"
+          - "2"
+          - "3"
+          - "4"
+      meta_timeout_seconds:
+        description: Meta render wait per attempt for a manual test
+        required: true
+        default: "300"
+        type: string
 
 concurrency:
   group: youtube-automation-persistent-browser
@@ -51,13 +68,13 @@ jobs:
           printf '%s' "$META_AI_STORAGE_STATE_B64" | base64 --decode | gzip --decompress > "$RUNNER_TEMP/meta-ai-storage-state.json"
           python -c 'import json, os; json.load(open(os.environ["RUNNER_TEMP"] + "/meta-ai-storage-state.json", encoding="utf-8"))'
 
-      - name: Restore permanent Milo reference
-        uses: actions/cache@v4
+      - name: Restore unfinished Meta AI video job
+        uses: actions/cache/restore@v4
         with:
-          path: meta_ai_state
-          key: meta-ai-character-${{ runner.os }}-${{ github.run_id }}
+          path: meta_ai_jobs
+          key: meta-ai-video-jobs-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
-            meta-ai-character-${{ runner.os }}-
+            meta-ai-video-jobs-${{ runner.os }}-
 
       - name: Restore credentials
         run: |
@@ -102,11 +119,35 @@ jobs:
           YOUTUBE_API_KEY:       ${{ secrets.YOUTUBE_API_KEY }}
           META_AI_STORAGE_STATE_FILE: ${{ runner.temp }}/meta-ai-storage-state.json
           META_AI_JOBS_DIR:      ${{ github.workspace }}/meta_ai_jobs
-          META_AI_CHARACTER_IMAGE: ${{ github.workspace }}/meta_ai_state/milo-reference.png
           META_AI_BROWSER_CHANNEL: chromium
           META_AI_HEADLESS: "false"
-          META_AI_TIMEOUT_SECONDS: "900"
-        run: xvfb-run -a python main.py --once
+          META_AI_TIMEOUT_SECONDS: ${{ inputs.meta_timeout_seconds || '900' }}
+          SELECTED_CHANNEL: ${{ inputs.channel || 'all' }}
+        run: |
+          args=(--once)
+          if [ "$SELECTED_CHANNEL" != "all" ]; then
+            args+=(--channel "$SELECTED_CHANNEL")
+          fi
+          xvfb-run -a python -u main.py "${args[@]}"
+
+      - name: Upload Meta AI diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meta-ai-diagnostics-${{ github.run_id }}
+          path: |
+            meta_ai_jobs/**/debug/*.png
+            meta_ai_jobs/**/manifest.json
+            meta_ai_jobs/**/meta_prompts.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Save unfinished Meta AI video job
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: meta_ai_jobs
+          key: meta-ai-video-jobs-${{ runner.os }}-${{ github.run_id }}
 
       - name: Commit dedup state
         if: always()
