@@ -24,7 +24,7 @@ GITHUB_PAT = os.getenv("YOUTUBE_BOT_GITHUB_PAT", "")
 CHANNELS = [
     {
         "id":      1,
-        "name":    "MindSpark Secrets",
+        "name":    "Silicon Crime Files",
         "secrets": "credentials/channel1_secrets.json",
         "token":   "credentials/channel1_token.json",
     },

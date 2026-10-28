@@ -82,7 +82,7 @@ VIDEO_CRF     = 16     # Lower CRF = higher quality
 # ── CHANNEL-SPECIFIC VOICE SETTINGS ───────────────────────
 # Using Deepgram models for each channel theme
 CHANNEL_VOICES = {
-    "channel_1": "aura-2-zeus-en",      # Psychology: Deep, commanding, dramatic
+    "channel_1": "aura-2-zeus-en",      # Tech crime: Deep, urgent, investigative
     "channel_2": "aura-2-orpheus-en",   # Storytelling: Authoritative, cinematic tension
     "channel_3": "aura-2-atlas-en",     # Kids history: Friendly, energetic storyteller
     "channel_4": "aura-odysseus-en",    # Stoic: Calm, steady, philosophical
@@ -90,7 +90,7 @@ CHANNEL_VOICES = {
 
 # Edge TTS fallback voices (if Deepgram fails)
 EDGE_VOICES = {
-    "channel_1": "en-US-GuyNeural",      # Male, energetic
+    "channel_1": "en-US-GuyNeural",      # Male, urgent investigative delivery
     "channel_2": "en-GB-RyanNeural",      # Male, British, dramatic storyteller
     "channel_3": "en-US-GuyNeural",       # Milo: fixed energetic male narrator
     "channel_4": "en-US-ChristopherNeural", # Male, deep, authoritative
@@ -114,22 +114,26 @@ UPLOAD_HOUR_UTC = 6   # 21:00 UTC = 5:00 PM EST = 2:00 PM PST
 CHANNELS = [
     {
         "id": "channel_1",
-        "name": "MindSpark Secrets",
-        "handle": "@MindSparkSecrets",
-        "tagline": "Decode Behavior. Upgrade Your Mind.",
-        "description": "Your brain makes decisions before you notice. MindSpark Secrets turns psychology, cognitive biases, habits, and human behavior into vivid, practical Shorts. Every episode gives you one surprising mechanism, one real-world example, and one takeaway you can use today. Subscribe to decode behavior and upgrade your mind.",
+        "name": "Silicon Crime Files",
+        "handle": "@SiliconCrimeFiles",
+        "tagline": "Code. Power. Consequences.",
+        "description": "The biggest technology crimes rarely begin with a siren. Silicon Crime Files investigates publicly documented hacks, startup deceptions, corporate fraud cases, billion-dollar failures, and the evidence hidden inside code and boardrooms. Every cinematic Short distinguishes allegations, charges, settlements, and convictions clearly. Subscribe for true cases where code, power, and consequences collide.",
         "logo_file": "assets/branding/channel_1/logo.png",
         "banner_file": "assets/branding/channel_1/banner.jpg",
-        "niche": "Psychology facts, human behavior patterns, mind tricks, social psychology, and cognitive biases explained simply",
-        "keywords": ["psychology", "human behavior", "mind tricks", "social psychology", "cognitive bias", "psychology facts"],
+        "niche": "High-stakes technology and corporate true crime based on documented public cases involving cybercrime, startup deception, corporate fraud, data breaches, code failures, regulatory investigations, and billion-dollar consequences",
+        "keywords": ["tech true crime", "corporate crime", "cybercrime", "startup fraud", "tech scandals", "financial crime", "data breach"],
         "client_secrets_file": "credentials/channel1_secrets.json",
         "token_file": "credentials/channel1_token.json",
         "use_voice": True,
-        "music_mood": "suspenseful",
-        "category_id": "27",
-        "hook_style": "surprising",
-        "script_type": "educational",
+        "require_visuals": True,
+        "music_mood": "suspense",
+        "category_id": "28",
+        "hook_style": "evidence_first",
+        "script_type": "tech_corporate_true_crime",
+        "opening_style": "tech_evidence",
+        "hook_sfx": "tech_glitch_boom",
         "strict_ai_prompts": True,
+        "allow_curated_fallback": True,
         "track_prompt_history": True,
         "strict_upload_dedup": True,
     },
@@ -146,11 +150,13 @@ CHANNELS = [
         "client_secrets_file": "credentials/channel2_secrets.json",
         "token_file": "credentials/channel2_token.json",
         "use_voice": True,
+        "require_visuals": True,
         "music_mood": "mysterious",
         "category_id": "24",
         "hook_style": "climax_first",
         "script_type": "deep_storytelling",
         "strict_ai_prompts": True,
+        "allow_curated_fallback": True,
         "track_prompt_history": True,
         "strict_upload_dedup": True,
     },
@@ -194,11 +200,13 @@ CHANNELS = [
         "client_secrets_file": "credentials/channel4_secrets.json",
         "token_file": "credentials/channel4_token.json",
         "use_voice": True,
-        "music_mood": "epic_cinematic",
+        "require_visuals": True,
+        "music_mood": "cinematic",
         "category_id": "27",
         "hook_style": "pain_point", # Start with a common modern struggle (e.g., burnout)
         "script_type": "educational",
         "strict_ai_prompts": True,
+        "allow_curated_fallback": True,
         "track_prompt_history": True,
         "strict_upload_dedup": True,
     },

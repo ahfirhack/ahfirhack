@@ -317,7 +317,12 @@ def _fetch_wikimedia(query: str, num: int, used: set) -> list:
 # ── Download Helper ──────────────────────────────────────────
 def _download_clip(url: str, dest: str) -> bool:
     try:
-        r = requests.get(url, stream=True, timeout=120)
+        r = requests.get(
+            url,
+            stream=True,
+            headers={"User-Agent": WIKIMEDIA_UA},
+            timeout=120,
+        )
         r.raise_for_status()
         with open(dest, "wb") as f:
             for chunk in r.iter_content(chunk_size=8192):

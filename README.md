@@ -10,10 +10,10 @@ Vertical video plus script, prompt, title, and clip deduplication are included.
 
 | # | Channel | Handle | Niche | Music Mood |
 |---|---------|--------|-------|------------|
-| 1 | **MindSpark Secrets** | `@MindSparkSecrets` | Psychology facts, social behavior, and cognitive biases | Suspenseful |
+| 1 | **Silicon Crime Files** | `@SiliconCrimeFiles` | High-stakes tech and corporate true crime from documented public cases | Suspenseful |
 | 2 | **StoryFuse** | `@StoryFuseTV` | Cinematic deep storytelling, escalating stakes, and twist endings | Mysterious |
 | 3 | **Epic History Kids** | `@EpicHistoryKids` | Kid-safe stories about civilizations, people, inventions, and discoveries | Playful |
-| 4 | **Stoic Reset** | `@StoicResetShorts` | Ancient wisdom applied to modern stress and mental health | Epic cinematic |
+| 4 | **Stoic Reset** | `@StoicResetShorts` | Ancient wisdom applied to modern stress and mental health | Cinematic |
 
 ---
 
@@ -39,7 +39,7 @@ python auth_tokens.py
 
 This opens your browser **4 times** — sign in with the correct Google account for each channel.  
 Token files are saved in `credentials/`:
-- `channel1_token.json` → MindSpark Secrets
+- `channel1_token.json` → Silicon Crime Files
 - `channel2_token.json` → StoryFuse
 - `channel3_token.json` → Epic History Kids
 - `channel4_token.json` → Stoic Reset
@@ -63,7 +63,7 @@ Go to: **Repo → Settings → Secrets and variables → Actions → New reposit
 | Secret Name | Value |
 |-------------|-------|
 | `CLIENT_SECRETS_B64` | base64 of `credentials/client_secrets.json` |
-| `CHANNEL1_TOKEN_B64` | base64 of `credentials/channel1_token.json` (MindSpark Secrets) |
+| `CHANNEL1_TOKEN_B64` | base64 of `credentials/channel1_token.json` (Silicon Crime Files) |
 | `CHANNEL2_TOKEN_B64` | base64 of `credentials/channel2_token.json` (StoryFuse) |
 | `CHANNEL3_TOKEN_B64` | base64 of `credentials/channel3_token.json` (Epic History Kids) |
 | `CHANNEL4_TOKEN_B64` | base64 of `credentials/channel4_token.json` (Stoic Reset) |

@@ -145,6 +145,7 @@ def upload_video(
     channel_config: dict,
     description: str = "",
     script: str = "",
+    source_url: str = "",
 ) -> str:
     """Uploads video with SEO-optimized metadata."""
     channel_name = channel_config["name"]
@@ -171,6 +172,11 @@ def upload_video(
 
     if not description:
         description = _build_seo_description(title, script, tags, channel_name)
+    if source_url:
+        description = (
+            description.rstrip()
+            + f"\n\nPublic record used for this episode:\n{source_url}\n"
+        )[:5000]
 
     # Clean tags: remove #, deduplicate, add algorithmic boosters
     clean_tags = []

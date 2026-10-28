@@ -187,7 +187,10 @@ def _generate_unique_script(
         try:
             data = generate_script(
                 niche,
-                allow_fallback=not channel.get("strict_ai_prompts", False),
+                allow_fallback=channel.get(
+                    "allow_curated_fallback",
+                    not channel.get("strict_ai_prompts", False),
+                ),
                 reject_candidate=is_duplicate,
                 uniqueness_seed=seed,
             )
@@ -347,6 +350,12 @@ def process_video(
         seamless_scenes=channel.get("seamless_scenes", False),
         native_clip_audio=native_audio,
         show_overlays=channel.get("show_overlays", True),
+        opening_style=channel.get("opening_style", "default"),
+        hook_sfx=channel.get("hook_sfx"),
+        hook_overlay=data.get("hook_overlay", ""),
+        hook_accent=data.get("hook_accent", ""),
+        evidence_label=data.get("evidence_label", ""),
+        require_visuals=channel.get("require_visuals", False),
     )
 
     # 6. Upload as YouTube Short
@@ -358,6 +367,7 @@ def process_video(
         tags=tags + ["#Shorts"],
         channel_config=channel,
         script=script,
+        source_url=data.get("source_url", ""),
     )
 
     if meta_job_dir is not None:

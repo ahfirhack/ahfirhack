@@ -13,8 +13,8 @@ from config import DEEPGRAM_API_KEY, CHANNEL_VOICES, EDGE_VOICES
 
 # Deepgram models for each channel theme
 DEEPGRAM_MODELS = {
-    "channel_1": "aura-2-zeus-en",      # Psychology: Deep, commanding, dramatic
-    "channel_2": "aura-2-orpheus-en",   # History: Authoritative, discovery-channel vibe
+    "channel_1": "aura-2-zeus-en",      # Tech crime: Deep, urgent, investigative
+    "channel_2": "aura-2-orpheus-en",   # Storytelling: Authoritative, cinematic tension
     "channel_3": "aura-2-atlas-en",     # Kids history: Friendly, energetic storyteller
     "channel_4": "aura-odysseus-en",    # Stoic: Calm, steady, philosophical
 }

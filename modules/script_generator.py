@@ -43,6 +43,13 @@ CEREBRAS_MODELS_URL = "https://api.cerebras.ai/v1/models"
 
 # ── VISUAL SEARCH HINTS FOR FOOTAGE ──
 NICHE_SEARCH_HINTS = {
+    "tech_crime": [
+        "redacted court filing on desk dramatic close up",
+        "cybersecurity analyst reviewing terminal logs dark office",
+        "executive silhouette at congressional hearing wide shot",
+        "server room warning lights forensic investigation",
+        "financial evidence documents with red string close up",
+    ],
     "psychology": [
         "person thinking deeply alone",
         "brain illustration with neurons",
@@ -92,9 +99,80 @@ NICHE_SEARCH_HINTS = {
 # ── UPDATED FALLBACK SCRIPTS (Optimized for 2026 High-Retention Niches) ──
 
 FALLBACK_SCRIPTS = {
-    "storytelling": [ # For the "Karma & Revenge" Channel
-        {"title": "The Neighbor Who Regretted Everything", "script": "My neighbor blocked my driveway for six months. He laughed every time I asked him to move. He thought he was untouchable because he knew the city council. So I stopped asking. I spent three weeks researching local zoning laws. I found out his entire garage was built two feet over the property line. One anonymous tip later and the city ordered him to tear it down. It cost him forty thousand dollars. Now my driveway is clear and he doesn't even look at me. Justice is a dish best served with blueprints.", "tags": ["prorevenge", "karma", "satisfying", "neighborwars", "justice"], "search_query": "angry man looking at construction site"},
-       
+    "tech_crime": [
+        {
+            "title": "Theranos: The Finger-Prick Promise That Failed",
+            "script": "Theranos raised hundreds of millions around a machine that promised many blood tests from a finger prick. But federal trial evidence showed its founder, Elizabeth Holmes, made false claims to investors about the technology and company performance. In 2022, a jury convicted her on four investor-fraud counts involving more than $140 million in wire transfers. She received a sentence exceeding eleven years. The tiny blood sample was never the biggest risk. The claims around it were. Like and Subscribe for more.",
+            "tags": ["theranos", "techcrime", "corporatefraud", "truecrime", "siliconvalley"],
+            "search_query": "Theranos federal court records blood testing machine evidence close up",
+            "visual_queries": [
+                "federal court filing beside small blood vial dramatic evidence close up",
+                "laboratory blood testing machine under red forensic light macro shot",
+                "empty startup boardroom after verdict cold cinematic wide shot",
+            ],
+            "hook_overlay": "THE MACHINE SOLD A PROMISE",
+            "hook_accent": "$140 MILLION",
+            "evidence_label": "FEDERAL VERDICT // 2022",
+            "source_url": "https://www.justice.gov/usao-ndca/pr/elizabeth-holmes-sentenced-more-11-years-defrauding-theranos-investors-hundreds",
+        },
+        {
+            "title": "FTX Hid the Risk Inside Its Code",
+            "script": "FTX customers saw a trusted crypto exchange. Behind the interface, federal prosecutors said its founder directed code changes that let Alameda withdraw effectively unlimited funds. A jury convicted Sam Bankman-Fried on seven fraud and conspiracy counts. In 2024, he received twenty-five years in prison and more than eleven billion dollars in forfeiture. The most dangerous feature was not visible on any customer screen. It was hidden in the system's privileges. Like and Subscribe for more.",
+            "tags": ["ftx", "cryptocrime", "corporatefraud", "techcrime", "truecrime"],
+            "search_query": "cryptocurrency exchange terminal code federal evidence dramatic close up",
+            "visual_queries": [
+                "crypto trading screen freezes beside federal case file dark close up",
+                "software engineer reviews privileged account code red monitor light",
+                "empty cryptocurrency office after conviction cinematic wide shot",
+            ],
+            "hook_overlay": "THE RISK WAS IN THE CODE",
+            "hook_accent": "$11 BILLION",
+            "evidence_label": "FEDERAL SENTENCING // 2024",
+            "source_url": "https://www.justice.gov/usao-sdny/pr/samuel-bankman-fried-sentenced-25-years-prison",
+        },
+        {
+            "title": "Uber Called a Breach a Bug Bounty",
+            "script": "Uber called a one-hundred-thousand-dollar payment a bug bounty. Federal trial evidence showed hackers had stolen records tied to roughly fifty-seven million users and drivers in 2016. Prosecutors said former security chief Joseph Sullivan helped conceal the breach while the FTC was investigating Uber's security practices. A jury convicted him of obstruction and misprision of a felony in 2022. The payment looked like security work. The hidden data made it evidence. Like and Subscribe for more.",
+            "tags": ["uber", "databreach", "cybercrime", "techcrime", "corporatecrime"],
+            "search_query": "data breach court evidence bug bounty payment cybersecurity office",
+            "visual_queries": [
+                "redacted breach report marked bug bounty under red desk light close up",
+                "security analyst reviews stolen user records terminal dark office",
+                "federal courtroom documents beside locked server rack wide shot",
+            ],
+            "hook_overlay": "A BREACH BECAME A BOUNTY",
+            "hook_accent": "57 MILLION RECORDS",
+            "evidence_label": "FEDERAL VERDICT // 2022",
+            "source_url": "https://www.justice.gov/usao-ndca/pr/former-chief-security-officer-uber-convicted-federal-charges-covering-data-breach",
+        },
+        {
+            "title": "Volkswagen Put the Deception in Software",
+            "script": "Volkswagen diesel cars appeared clean during laboratory testing. On the road, hidden software changed how emissions controls behaved. The Justice Department said the defeat device affected about five-hundred-ninety-thousand vehicles sold in the United States. Volkswagen agreed to plead guilty to three felonies and pay a 2.8-billion-dollar criminal penalty, plus 1.5 billion dollars in civil resolutions. One decision inside the code changed an entire corporation's legal future. The test was not fooled by the engine. It was fooled by software. Like and Subscribe for more.",
+            "tags": ["volkswagen", "dieselgate", "corporatecrime", "software", "techcrime"],
+            "search_query": "diesel emissions test software code Justice Department evidence",
+            "visual_queries": [
+                "diesel emissions test monitor shows conflicting readings close up",
+                "automotive engineer reviews engine control software dark laboratory",
+                "federal plea agreement beside car keys cinematic evidence shot",
+            ],
+            "hook_overlay": "THE SOFTWARE KNEW THE TEST",
+            "hook_accent": "$4.3 BILLION",
+            "evidence_label": "DOJ RESOLUTION // 2017",
+            "source_url": "https://www.justice.gov/archives/opa/pr/volkswagen-ag-agrees-plead-guilty-and-pay-43-billion-criminal-and-civil-penalties-six",
+        },
+    ],
+    "storytelling": [
+        {
+            "title": "Her Warning Came From Tomorrow",
+            "script": "Mara heard her own voice on a recorder saying, do not open the door. The timestamp read tomorrow. Three knocks matched the recording exactly. She called her brother, but his phone rang outside. Behind the door sat his coat, a train ticket, and one final message: leave now. Mara reached the station before her apartment ceiling collapsed. Then she understood who recorded the warning. Tomorrow, she would send it back. Like and Subscribe for more.",
+            "tags": ["shortstory", "plottwist", "mystery", "storytelling", "suspense"],
+            "search_query": "young woman red coat hears recorder rainy apartment cinematic close up",
+            "visual_queries": [
+                "young woman red coat hears recorder rainy apartment close up",
+                "young woman red coat opens dark hallway door handheld camera",
+                "young woman red coat runs through train station dawn wide shot",
+            ],
+        },
     ],
     "documentary": [ # For the "History Mystery" Channel
         {"title": "The Machine That Shouldn't Exist", "script": "In 1901, divers found a rusted bronze device in an ancient shipwreck. They thought it was a gear. It turned out to be a computer built two thousand years ago. It’s called the Antikythera Mechanism. It could predict eclipses and track the stars with terrifying accuracy. But there's a problem. This level of technology wasn't supposed to exist for another thousand years. Who built it? And where did that knowledge go? History isn't a straight line. It's a series of lost secrets.", "tags": ["historymystery", "ancienttech", "unexplained", "lostcivilization", "science"], "search_query": "ancient rusted bronze gears artifact"},
@@ -111,8 +189,18 @@ FALLBACK_SCRIPTS = {
     "tutorial": [ # For the "Digital & Home Declutter" Channel
         {"title": "The 'One-Touch' Rule for a Clean Desk", "script": "Your desk is messy because you touch things twice. You pick up a bill, look at it, and put it down. That's two touches. The 'One-Touch' rule says if you touch it, you must finish it. File it, delete it, or throw it away. Never put it back down to 'deal with later.' I tried this for one week and my workspace stayed spotless without any extra effort. Your brain can't focus in chaos. Clear the desk, clear the mind. Try the one-touch rule today.", "tags": ["productivity", "minimalism", "desksetup", "organizing", "lifehack"], "search_query": "clean minimalist desk workspace setup"},
     ],
-    "educational": [ # For the "Modern Stoic" Channel
-        {"title": "The Secret to Not Caring What People Think", "script": "Marcus Aurelius once wrote: 'It never ceases to amaze me. We love ourselves more than others, but care more about their opinion than our own.' Think about that. You are living your life based on the guesses of people who don't even know your heart. Stop seeking external validation. The only person you need to impress is the person in the mirror. If you are okay with your choices, the world's opinion doesn't matter. Focus on your character, not your reputation.", "tags": ["stoicism", "mentalhealth", "philosophy", "wisdom", "mindset"], "search_query": "person standing alone mountain top peaceful"},
+    "educational": [
+        {
+            "title": "The Two-Column Rule for Harsh Criticism",
+            "script": "One harsh message can control your entire day, but only if you answer it immediately. The Stoics separated what happens from the judgment we add. Before replying, write two columns: what you control, and what you do not. Put your words, timing, and conduct in the first. Put their opinion in the second. Then respond only from the first column. The criticism may stay, but its grip weakens. Your pause becomes the strength the message tried to take. Like and Subscribe for more.",
+            "tags": ["stoicism", "criticism", "selfcontrol", "resilience", "mindset"],
+            "search_query": "professional pauses before replying to harsh message at desk",
+            "visual_queries": [
+                "professional reads harsh phone message dark office close up",
+                "professional writes two control columns notebook overhead shot",
+                "professional calmly closes phone at sunrise office wide shot",
+            ],
+        },
     ],
     "psychology": [ # For the "Psychology & Human Behavior" Channel
         {"title": "The Memory Trick That Always Works", "script": "You remember things better when you're about to sleep. Your brain consolidates memories during deep sleep. Study for 30 minutes before bed, then sleep. You'll wake up knowing it. This is called the spacing effect. It's how your brain stores long-term memories. Try it tonight. Your brain will thank you. Like and Subscribe for more.", "tags": ["psychology", "memory", "learning", "brain", "study tips"], "search_query": "person studying at night desk"},
@@ -131,6 +219,15 @@ def _detect_niche_key(niche: str) -> str:
         w in n for w in ["history", "historical", "ancient civilization"]
     ):
         return "kids_history"
+
+    # Evidence-led technology and corporate cases need stronger factual and
+    # legal-status safeguards than generic documentary or story content.
+    if any(w in n for w in [
+        "tech true crime", "technology and corporate true crime",
+        "corporate crime", "cybercrime", "startup deception",
+        "corporate fraud", "data breach", "regulatory investigation",
+    ]):
+        return "tech_crime"
 
     # NEW: Psychology & Human Behavior (Fast viral potential)
     if any(w in n for w in ["psychology", "human behavior", "mind tricks", "social psychology", "cognitive bias", "behavior"]):
@@ -197,6 +294,23 @@ KIDS' HISTORY EPISODE RULES:
 - Never change Milo's appearance, clothing, age, or personality.
 """ if kids_history else ""
     non_kids_rules = {
+        "tech_crime": """
+SILICON CRIME FILES — HIGH-STAKES TECH TRUE-CRIME RULES:
+- Cover one specific, well-documented public case. Use verifiable names, dates, amounts, technical details, and outcomes from court records, regulator findings, company filings, public hearings, or established reporting.
+- Never invent a leak, email, code fragment, quote, victim, allegation, or dollar figure. If a detail is uncertain, disputed, or unsupported, omit it and choose a better-documented case.
+- State legal status precisely: alleged, charged, settled without admission, found liable, pleaded guilty, or convicted are not interchangeable. Do not imply guilt beyond the public record.
+- Do not identify private individuals, expose personal data, glamorize offenders, give operational crime instructions, or turn victim harm into spectacle.
+- 0:00-0:05 HOOK: Lead with the largest documented contradiction, consequence, dollar amount, or technical clue. No greeting and no background setup.
+- 0:05-0:14 CASE: Name the company or public figure, the year, what was publicly claimed, and what investigators or evidence showed.
+- 0:14-0:28 EVIDENCE: Deliver two fast micro-reveals—an official document, code detail, transaction, testimony, timeline conflict, or regulatory finding. Each reveal must raise the stakes.
+- NEAR END PAYOFF: State the documented consequence or unresolved question, then loop naturally to the opening clue before the final CTA.
+- Title: 5-10 words, under 60 characters, containing the specific company, product, person, amount, or technical contradiction. Never use generic titles such as "Big Tech Exposed", "Corporate Crime", or "Tech Scam Revealed".
+- hook_overlay: 4-8 urgent words that communicate the case contradiction without unsupported clickbait.
+- hook_accent: exactly one short, visually powerful documented element—prefer a dollar amount such as "$5 BILLION" or a technical clue such as "SEMICOLON". Do not invent it.
+- evidence_label: a short public-record label such as "SEC COMPLAINT // 2018", "COURT EXHIBIT // 2022", or "PUBLIC HEARING // 2024". It must match the episode's real evidence.
+- source_url: the direct HTTPS URL of the official public record supporting the episode. Prefer a court, regulator, or government source; never return a search page or social-media post.
+- First visual query: real public evidence context where available—official filing, public hearing, dated corporate statement, court exhibit, or terminal evidence recreation. Never call a recreation a real leaked document.
+""",
         "psychology": """
 MINDSPARK SECRETS EPISODE RULES:
 - Build the episode around one specific, scientifically grounded behavior mechanism or cognitive bias.
@@ -245,11 +359,20 @@ EPISODE QUALITY RULES:
     non_kids_visual_rule = """
 VISUAL SEQUENCE RULE: Also return visual_queries as exactly three concrete stock-footage searches in story order—hook, escalation, payoff. Each query must name a visible subject, action, setting, mood or lighting, and camera framing. For a story, repeat the protagonist's same visible traits in every query so the footage feels continuous.
 """ if not kids_history else ""
-    non_kids_json_field = (
-        ', "visual_queries": ["hook shot", "escalation shot", "payoff shot"]'
-        if not kids_history else
-        ""
-    )
+    if niche_key == "tech_crime":
+        non_kids_json_field = (
+            ', "visual_queries": ["evidence hook shot", "investigation shot", "consequence shot"]'
+            ', "hook_overlay": "four-to-eight word case contradiction"'
+            ', "hook_accent": "one documented amount or technical clue"'
+            ', "evidence_label": "named public record and year"'
+            ', "source_url": "direct official HTTPS public-record URL"'
+        )
+    elif not kids_history:
+        non_kids_json_field = (
+            ', "visual_queries": ["hook shot", "escalation shot", "payoff shot"]'
+        )
+    else:
+        non_kids_json_field = ""
     unique_focus = (
         "historical subject and angle"
         if kids_history else
@@ -293,6 +416,13 @@ Respond ONLY with valid JSON (no markdown, no backticks):
 
 
 GENERIC_TITLES = {
+    "tech_crime": {
+        "big tech exposed",
+        "corporate crime",
+        "tech scam revealed",
+        "the dark side of tech",
+        "billion dollar scam",
+    },
     "psychology": {
         "the memory trick that always works",
         "why we judge people so quickly",
@@ -339,6 +469,35 @@ def _reject_generic_title(title: str, niche_key: str) -> bool:
         or normalized in GENERIC_TITLES.get(niche_key, set())
         or not 4 <= word_count <= 12
         or len(str(title).strip()) >= 60
+    )
+
+
+def _valid_visual_packaging(result: dict, niche_key: str) -> bool:
+    """Require the beat metadata used to keep footage and narration aligned."""
+    if niche_key == "kids_history":
+        return True
+    visual_queries = result.get("visual_queries")
+    if (
+        not isinstance(visual_queries, list)
+        or len(visual_queries) != 3
+        or any(not isinstance(query, str) or len(query.split()) < 4 for query in visual_queries)
+    ):
+        return False
+    if niche_key != "tech_crime":
+        return True
+    hook_overlay = str(result.get("hook_overlay", "")).strip()
+    hook_accent = str(result.get("hook_accent", "")).strip()
+    evidence_label = str(result.get("evidence_label", "")).strip()
+    source_url = str(result.get("source_url", "")).strip()
+    return (
+        4 <= len(hook_overlay.split()) <= 8
+        and 1 <= len(hook_accent.split()) <= 4
+        and 2 <= len(evidence_label.split()) <= 7
+        and len(hook_overlay) <= 64
+        and len(hook_accent) <= 32
+        and len(evidence_label) <= 52
+        and source_url.startswith("https://")
+        and len(source_url) <= 300
     )
 
 
@@ -785,6 +944,9 @@ def generate_script(
         if niche_key != "kids_history" and _reject_generic_title(result["title"], niche_key):
             print(f"[ScriptGen] {name}: generic or weak title rejected -> next provider")
             continue
+        if not _valid_visual_packaging(result, niche_key):
+            print(f"[ScriptGen] {name}: incomplete visual timing pack rejected -> next provider")
+            continue
 
         # Post-process the script
         result["script"] = _post_process_script(result["script"])
@@ -817,6 +979,11 @@ def generate_script(
     fallback_scripts = FALLBACK_SCRIPTS.get(key, FALLBACK_SCRIPTS["storytelling"])
     for template in random.sample(fallback_scripts, len(fallback_scripts)):
         fallback = dict(template)
+        if (
+            (key != "kids_history" and _reject_generic_title(fallback["title"], key))
+            or not _valid_visual_packaging(fallback, key)
+        ):
+            continue
         fallback["script"] = _post_process_script(fallback["script"])
         if reject_candidate is not None and reject_candidate(fallback):
             continue

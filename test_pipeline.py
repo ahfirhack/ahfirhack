@@ -34,7 +34,10 @@ def test_channel(ch):
     else:
         data = generate_script(
             ch["niche"],
-            allow_fallback=not ch.get("strict_ai_prompts", False),
+            allow_fallback=ch.get(
+                "allow_curated_fallback",
+                not ch.get("strict_ai_prompts", False),
+            ),
         )
         manifest = meta_job_dir = None
     print(f"  Title: {data['title']} | {len(data['script'].split())}w | Query: {data['search_query']}")
@@ -64,7 +67,8 @@ def test_channel(ch):
         clips = ensure_rendered_clips(manifest, meta_job_dir)
     else:
         clips = fetch_video_clips(query=data["search_query"], num_clips=6,
-                                  script=data["script"], niche_keywords=ch.get("keywords", []))
+                                  script=data["script"], niche_keywords=ch.get("keywords", []),
+                                  visual_queries=data.get("visual_queries", []))
 
     # Assemble video with voice + music
     audio_for_video = None if native_audio else (voice_path if voice_path else music_path)
@@ -80,6 +84,12 @@ def test_channel(ch):
         seamless_scenes=ch.get("seamless_scenes", False),
         native_clip_audio=native_audio,
         show_overlays=ch.get("show_overlays", True),
+        opening_style=ch.get("opening_style", "default"),
+        hook_sfx=ch.get("hook_sfx"),
+        hook_overlay=data.get("hook_overlay", ""),
+        hook_accent=data.get("hook_accent", ""),
+        evidence_label=data.get("evidence_label", ""),
+        require_visuals=ch.get("require_visuals", False),
     )
     print(f"\n  OUTPUT: {path}\n")
     return path
