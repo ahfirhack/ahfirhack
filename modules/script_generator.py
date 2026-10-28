@@ -172,6 +172,8 @@ FALLBACK_SCRIPTS = {
                 "young woman red coat opens dark hallway door handheld camera",
                 "young woman red coat runs through train station dawn wide shot",
             ],
+            "hook_overlay": "HER WARNING CAME FROM TOMORROW",
+            "hook_accent": "TOMORROW",
         },
     ],
     "documentary": [ # For the "History Mystery" Channel
@@ -200,6 +202,8 @@ FALLBACK_SCRIPTS = {
                 "professional writes two control columns notebook overhead shot",
                 "professional calmly closes phone at sunrise office wide shot",
             ],
+            "hook_overlay": "ONE MESSAGE HIJACKED YOUR DAY",
+            "hook_accent": "CONTROL",
         },
     ],
     "psychology": [ # For the "Psychology & Human Behavior" Channel
@@ -337,14 +341,20 @@ STORYFUSE HIGH-RETENTION FRAMEWORK — COMPRESS THIS INTO 30 SECONDS:
 - Use one clear protagonist, one central conflict, active verbs, concrete sensory detail, and short spoken sentences. Every sentence must advance the story.
 - Prefer original cinematic fiction about impossible choices, survival, loyalty, betrayal, sacrifice, mystery, or consequences. Never claim an invented story is true. Do not use real private people, graphic violence, cruelty, or exploitative tragedy.
 - Title: 5-9 words that tease the central contradiction without spoiling the climax. Avoid vague templates such as "What Happened Next", "You Won't Believe This", or "The Neighbor Who Regretted Everything".
+- hook_overlay: 4-8 urgent words showing the story's impossible contradiction. It must be specific to this episode, readable in two seconds, and must not spoil the reveal.
+- hook_accent: 1-4 words naming the decisive object, deadline, or clue.
 - The search query must depict the hook's exact character, action, setting, mood, lighting, and camera framing for visually coherent footage.
 """,
         "educational": """
 STOIC RESET EPISODE RULES:
-- Start with one precise modern struggle such as overthinking a message, workplace criticism, envy, procrastination, or losing control in an argument.
-- Explain one accurate Stoic principle, then give one small action the viewer can take today.
+- 0:00-0:03 HOOK: Open inside one precise modern struggle or counterintuitive consequence. Create tension immediately; never begin with a quotation or generic advice.
+- 0:03-0:12 PRINCIPLE: Explain one accurate Stoic principle in plain language and contrast what is controllable with what is not.
+- 0:12-0:26 ACTION: Give one small, observable action the viewer can take today. Show why it changes the response, not the outside event.
+- 0:26-END PAYOFF/LOOP: Deliver the emotional consequence, loop it to the opening pressure, then use the final CTA.
 - Paraphrase ancient thinkers unless a quotation is verified. Never invent or misattribute a quote, and never make mental-health treatment claims.
-- The title must pair a recognizable pain point with a clear emotional promise. Never use generic titles such as "Burnout Alert", "Stoic Motivation", or "The Secret to Not Caring".
+- Title: 5-9 words pairing a recognizable pain point with a counterintuitive action or consequence. Never use generic titles such as "Burnout Alert", "Stoic Motivation", or "The Secret to Not Caring".
+- hook_overlay: 4-8 urgent words naming the exact modern pressure or consequence.
+- hook_accent: 1-4 words naming the Stoic principle or decisive action.
 - Use three visually distinct beats and a concrete search query showing a person taking an observable action in a modern setting.
 """,
     }.get(niche_key, """
@@ -366,6 +376,12 @@ VISUAL SEQUENCE RULE: Also return visual_queries as exactly three concrete stock
             ', "hook_accent": "one documented amount or technical clue"'
             ', "evidence_label": "named public record and year"'
             ', "source_url": "direct official HTTPS public-record URL"'
+        )
+    elif niche_key in {"storytelling", "educational"}:
+        non_kids_json_field = (
+            ', "visual_queries": ["hook shot", "escalation shot", "payoff shot"]'
+            ', "hook_overlay": "four-to-eight word episode-specific hook"'
+            ', "hook_accent": "one-to-four word object or principle"'
         )
     elif not kids_history:
         non_kids_json_field = (
@@ -483,18 +499,23 @@ def _valid_visual_packaging(result: dict, niche_key: str) -> bool:
         or any(not isinstance(query, str) or len(query.split()) < 4 for query in visual_queries)
     ):
         return False
-    if niche_key != "tech_crime":
+    if niche_key not in {"tech_crime", "storytelling", "educational"}:
         return True
     hook_overlay = str(result.get("hook_overlay", "")).strip()
     hook_accent = str(result.get("hook_accent", "")).strip()
+    hook_fields_valid = (
+        4 <= len(hook_overlay.split()) <= 8
+        and 1 <= len(hook_accent.split()) <= 4
+        and len(hook_overlay) <= 64
+        and len(hook_accent) <= 32
+    )
+    if niche_key != "tech_crime":
+        return hook_fields_valid
     evidence_label = str(result.get("evidence_label", "")).strip()
     source_url = str(result.get("source_url", "")).strip()
     return (
-        4 <= len(hook_overlay.split()) <= 8
-        and 1 <= len(hook_accent.split()) <= 4
+        hook_fields_valid
         and 2 <= len(evidence_label.split()) <= 7
-        and len(hook_overlay) <= 64
-        and len(hook_accent) <= 32
         and len(evidence_label) <= 52
         and source_url.startswith("https://")
         and len(source_url) <= 300

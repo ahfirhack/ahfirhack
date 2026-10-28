@@ -45,6 +45,15 @@ USED_VIDEOS_FILE   = "used_videos.json"
 USED_SCRIPTS_FILE  = "used_scripts.json"
 USED_PROMPTS_FILE  = "used_prompts.json"
 PROMPT_RESERVE_DB  = os.getenv("PROMPT_RESERVE_DB", "prompt_reserve.sqlite3")
+PROMPT_RESERVE_DB_CHANNEL_1 = os.getenv(
+    "PROMPT_RESERVE_DB_CHANNEL_1", "prompt_reserve_channel_1.sqlite3"
+)
+PROMPT_RESERVE_DB_CHANNEL_2 = os.getenv(
+    "PROMPT_RESERVE_DB_CHANNEL_2", "prompt_reserve_channel_2.sqlite3"
+)
+PROMPT_RESERVE_DB_CHANNEL_4 = os.getenv(
+    "PROMPT_RESERVE_DB_CHANNEL_4", "prompt_reserve_channel_4.sqlite3"
+)
 MUSIC_CACHE_DIR    = "music_cache"
 META_AI_JOBS_DIR = os.getenv("META_AI_JOBS_DIR", "meta_ai_jobs")
 META_AI_CREATE_URL = os.getenv("META_AI_CREATE_URL", "https://meta.ai/create")
@@ -132,10 +141,13 @@ CHANNELS = [
         "script_type": "tech_corporate_true_crime",
         "opening_style": "tech_evidence",
         "hook_sfx": "tech_glitch_boom",
+        "voice_provider": "edge",
+        "strict_voice": True,
         "strict_ai_prompts": True,
-        "allow_curated_fallback": True,
+        "allow_curated_fallback": False,
         "track_prompt_history": True,
         "strict_upload_dedup": True,
+        "prompt_reserve_db": PROMPT_RESERVE_DB_CHANNEL_1,
     },
     {
         "id": "channel_2",
@@ -155,10 +167,14 @@ CHANNELS = [
         "category_id": "24",
         "hook_style": "climax_first",
         "script_type": "deep_storytelling",
+        "opening_style": "story_suspense",
+        "voice_provider": "edge",
+        "strict_voice": True,
         "strict_ai_prompts": True,
-        "allow_curated_fallback": True,
+        "allow_curated_fallback": False,
         "track_prompt_history": True,
         "strict_upload_dedup": True,
+        "prompt_reserve_db": PROMPT_RESERVE_DB_CHANNEL_2,
     },
     {
         "id": "channel_3",
@@ -205,9 +221,13 @@ CHANNELS = [
         "category_id": "27",
         "hook_style": "pain_point", # Start with a common modern struggle (e.g., burnout)
         "script_type": "educational",
+        "opening_style": "stoic_suspense",
+        "voice_provider": "edge",
+        "strict_voice": True,
         "strict_ai_prompts": True,
-        "allow_curated_fallback": True,
+        "allow_curated_fallback": False,
         "track_prompt_history": True,
         "strict_upload_dedup": True,
+        "prompt_reserve_db": PROMPT_RESERVE_DB_CHANNEL_4,
     },
 ]

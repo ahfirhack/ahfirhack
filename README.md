@@ -88,8 +88,10 @@ You can also trigger it manually: **Actions → daily_upload → Run workflow**
 - 4 channels × 2 videos = **8 Shorts per day**
 - ~240 Shorts per month — fully automated
 - Dedup is tracked in `used_scripts.json`, compact `used_prompts.json`, and
-  `used_videos.json`. The transactional fallback lives in the approximately
-  2 MB `prompt_reserve.sqlite3` database. All state is committed after each run.
+  `used_videos.json`. Every channel has its own transactional SQLite reserve:
+  `prompt_reserve_channel_1.sqlite3`, `prompt_reserve_channel_2.sqlite3`,
+  `prompt_reserve.sqlite3` (Channel 3), and `prompt_reserve_channel_4.sqlite3`.
+  All state is committed after each run.
 
 ---
 
@@ -109,8 +111,15 @@ Assembly (FFmpeg — 1440×2560 vertical)
 Upload to YouTube as #Shorts
 ```
 
-Channels 1, 2, and 4 retain their caption overlays. Channel 3 adds no hook
+Channels 1, 2, and 4 use locked, channel-specific Edge voices, synchronized
+two-line captions, and episode-specific hook cards. Channel 3 adds no hook
 text, captions, end screen, external voiceover, or background music.
+
+The script generator discovers currently active provider models at runtime and
+fails over across Groq, OpenRouter Free, Cerebras, Gemini, Nova, Claude, and
+Amazon Bedrock. A daily `AI Script Generator Health` workflow validates fresh
+scripts and packaging for Channels 1, 2, and 4 so retired models or provider
+schema changes are detected before an upload run.
 
 ### Epic History Kids — automated Meta AI Create workflow
 
@@ -196,5 +205,6 @@ upload a seven-day diagnostic artifact.
 | **YouTube quota exceeded** | YouTube allows ~6 uploads/day per project. Apply for higher quota at console.cloud.google.com |
 | **No video clips found** | Broaden the channel's `keywords` list in `config.py` |
 | **Channel 3 script generation failed** | Every configured provider failed or repeated a prompt, and the SQLite reserve is exhausted. Check provider secrets and the available row count in `prompt_reserve.sqlite3`. |
+| **Channel 1, 2, or 4 script generation failed** | Check the daily `AI Script Generator Health` run and that channel's `prompt_reserve_channel_N.sqlite3` available-row count. The pipeline fails closed instead of recycling a used episode. |
 | **Meta safety service temporarily unavailable** | No account change is needed. The runner automatically retries four times and preserves the unfinished job for the next run. |
 | **Font missing on runner** | The GitHub Action installs `fonts-open-sans` and `fonts-dejavu-core` automatically |

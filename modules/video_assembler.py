@@ -44,6 +44,8 @@ FONT_DOWNLOAD_URLS_REGULAR = {
 CHANNEL_THEMES = {
     "silicon crime files": {
         "accent": "0xFF3131",
+        "caption_y_ratio": 0.56,
+        "caption_fontsize": 50,
         "tagline": "CODE. POWER. CONSEQUENCES.",
         "hooks": (
             "THE EVIDENCE WAS DIGITAL",
@@ -53,6 +55,8 @@ CHANNEL_THEMES = {
     },
     "storyfuse": {
         "accent": "0xFF5A36",
+        "caption_y_ratio": 0.58,
+        "caption_fontsize": 52,
         "tagline": "BIG STAKES. SHARP TWISTS. NO FILLER.",
         "hooks": (
             "THIS CHANGES EVERYTHING",
@@ -62,6 +66,8 @@ CHANNEL_THEMES = {
     },
     "stoic reset": {
         "accent": "0xE8B56A",
+        "caption_y_ratio": 0.60,
+        "caption_fontsize": 50,
         "tagline": "ANCIENT WISDOM. MODERN STRENGTH.",
         "hooks": (
             "RESET YOUR RESPONSE",
@@ -73,6 +79,8 @@ CHANNEL_THEMES = {
 
 DEFAULT_THEME = {
     "accent": "0xFFFF00",
+    "caption_y_ratio": 0.58,
+    "caption_fontsize": CAPTION_FONTSIZE,
     "tagline": "ONE IDEA. ONE ACTION.",
     "hooks": ("WATCH THIS", "DID YOU KNOW", "TRY THIS NOW"),
 }
@@ -313,6 +321,52 @@ def _build_hook_filter(font_bold: str, channel_name: str = "") -> str:
     return ",".join(filters)
 
 
+def _build_suspense_hook_filter(
+    font_bold: str,
+    channel_name: str,
+    hook_overlay: str,
+    hook_accent: str,
+) -> str:
+    """Render an episode-specific two-second hook for StoryFuse/Stoic Reset."""
+    theme = _channel_theme(channel_name)
+    overlay = _safe_text(hook_overlay.upper())[:64] or random.choice(theme["hooks"])
+    accent_text = _safe_text(hook_accent.upper())[:32] or "WATCH CLOSELY"
+    tagline = _safe_text(theme["tagline"])
+    words = overlay.split()
+    if len(overlay) > 25 and len(words) > 1:
+        split_at = min(
+            range(1, len(words)),
+            key=lambda index: abs(
+                len(" ".join(words[:index])) - len(" ".join(words[index:]))
+            ),
+        )
+        lines = [" ".join(words[:split_at]), " ".join(words[split_at:])]
+    else:
+        lines = [overlay]
+    longest = max(len(line) for line in lines)
+    headline_size = min(82, max(52, int(1180 / max(longest * 0.62, 1))))
+    accent_size = 62 if len(accent_text) <= 18 else 48
+    active = "lt(t,2.8)"
+    pulse = "between(t,0,0.10)+between(t,0.75,0.84)+between(t,1.55,1.64)"
+    filters = [
+        f"drawbox=x=0:y=0:w={WIDTH}:h={HEIGHT}:color=black@0.74:t=fill:enable='{active}'",
+        f"drawbox=x=70:y={HEIGHT}*0.31:w={WIDTH}-140:h={HEIGHT}*0.34:color=black@0.38:t=fill:enable='{active}'",
+        f"drawbox=x=70:y={HEIGHT}*0.31:w=12:h={HEIGHT}*0.34:color={theme['accent']}:t=fill:enable='{active}'",
+        f"drawbox=x=0:y={HEIGHT}*0.27:w={WIDTH}:h=6:color={theme['accent']}@0.9:t=fill:enable='{pulse}'",
+        f"drawtext=fontfile='{font_bold}':text='{accent_text}':fontsize={accent_size}:fontcolor={theme['accent']}:borderw=5:bordercolor=black:x=(w-text_w)/2:y={HEIGHT}*0.52:enable='{active}'",
+        f"drawtext=fontfile='{font_bold}':text='{tagline}':fontsize=32:fontcolor=white:borderw=3:bordercolor=black:x=(w-text_w)/2:y={HEIGHT}*0.61:enable='{active}'",
+    ]
+    positions = [0.39] if len(lines) == 1 else [0.365, 0.415]
+    for line, y_position in zip(lines, positions):
+        filters.append(
+            f"drawtext=fontfile='{font_bold}':text='{line}':fontsize={headline_size}:"
+            f"fontcolor=white:borderw=8:bordercolor=black:shadowx=5:shadowy=5:"
+            f"shadowcolor=black@0.8:x=(w-text_w)/2:y={HEIGHT}*{y_position}:"
+            f"enable='{active}'"
+        )
+    return ",".join(filters)
+
+
 def _build_tech_evidence_hook_filter(
     font_bold: str,
     hook_overlay: str,
@@ -380,6 +434,7 @@ def _build_caption_filter(
     speech_start: float = 0.0,
     speech_duration: float | None = None,
     minimum_start: float | None = None,
+    channel_name: str = "",
 ) -> str:
     """
     Caption rules:
@@ -391,6 +446,11 @@ def _build_caption_filter(
     words = script.split()
     if not words:
         return ""
+    theme = _channel_theme(channel_name)
+    accent = theme["accent"]
+    caption_fontsize = int(theme["caption_fontsize"])
+    caption_line_height = caption_fontsize + 12
+    caption_center_y = int(HEIGHT * float(theme["caption_y_ratio"]))
     caption_end = max(0.0, total_dur - end_screen_duration)
     speech_start = max(0.0, speech_start)
     minimum_start = speech_start if minimum_start is None else max(
@@ -414,15 +474,16 @@ def _build_caption_filter(
         if short_end <= short_start:
             return ""
         block_h = len(all_lines) * (SHORT_SCRIPT_FONTSIZE + 10)
-        start_y = HEIGHT // 2 - block_h // 2
+        start_y = caption_center_y - block_h // 2
         for li, line in enumerate(all_lines):
             y = start_y + li * (SHORT_SCRIPT_FONTSIZE + 10)
+            color = accent if li == 0 else "white"
             filters.append(
                 f"drawtext="
                 f"fontfile='{font_bold}':"
                 f"text='{line}':"
                 f"fontsize={SHORT_SCRIPT_FONTSIZE}:"
-                f"fontcolor=white:"
+                f"fontcolor={color}:"
                 f"borderw=3:bordercolor=black:"
                 f"box=1:boxcolor=black@0.42:boxborderw=14:"
                 f"x=(w-text_w)/2:y={y}:"
@@ -465,19 +526,20 @@ def _build_caption_filter(
         t_end = min(raw_end, caption_end)
         if t_end <= t_start:
             continue
-        block_h = len(block) * CAPTION_LINE_HEIGHT
-        start_y = HEIGHT // 2 - block_h // 2
+        block_h = len(block) * caption_line_height
+        start_y = caption_center_y - block_h // 2
 
         for li, line in enumerate(block):
-            y = start_y + li * CAPTION_LINE_HEIGHT
+            y = start_y + li * caption_line_height
+            color = accent if li == 0 else "white"
             filters.append(
                 f"drawtext="
                 f"fontfile='{font_bold}':"
                 f"text='{line}':"
-                f"fontsize={CAPTION_FONTSIZE}:"
-                f"fontcolor=white:"
+                f"fontsize={caption_fontsize}:"
+                f"fontcolor={color}:"
                 f"borderw=4:bordercolor=black:"
-                f"box=1:boxcolor=black@0.42:boxborderw=16:"
+                f"box=1:boxcolor=black@0.55:boxborderw=16:"
                 f"x=(w-text_w)/2:y={y}:"
                 f"enable='between(t,{t_start:.2f},{t_end:.2f})'"
             )
@@ -730,6 +792,11 @@ def assemble_video(
                 fb, hook_overlay, hook_accent, evidence_label
             )
             caption_minimum_start = 3.05
+        elif opening_style in {"story_suspense", "stoic_suspense"}:
+            hook_f = _build_suspense_hook_filter(
+                fb, channel_name, hook_overlay, hook_accent
+            )
+            caption_minimum_start = max(speech_start, 2.8)
         else:
             hook_f = _build_hook_filter(fb, channel_name)
             caption_minimum_start = max(speech_start, 2.2)
@@ -741,6 +808,7 @@ def assemble_video(
             speech_start=speech_start,
             speech_duration=voice_duration,
             minimum_start=caption_minimum_start,
+            channel_name=channel_name,
         )
         end_f = _build_end_screen_filter(total, fb, fr, channel_name, end_duration)
         parts = [p for p in [hook_f, caption_f, end_f] if p]

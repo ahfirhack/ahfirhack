@@ -1,4 +1,4 @@
-"""Transactional SQLite reserve of unique Channel 3 historical prompts.
+"""Transactional SQLite reserves of unique prompts for every channel.
 
 AI providers remain the primary prompt source. This reserve is used only when
 every configured provider fails. A row is reserved before rendering and is
@@ -14,8 +14,15 @@ import sqlite3
 import sys
 from pathlib import Path
 
+# GitHub Actions invokes this file directly. Add the repository root before
+# importing sibling modules so both ``python modules/prompt_reserve.py`` and
+# ``python -m modules.prompt_reserve`` behave identically.
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-SEED_VERSION = "kids-history-v1"
+from modules.prompt_reserve_seeders import SEED_VERSIONS, build_channel_prompts
+
+KIDS_SEED_VERSION = "kids-history-v1"
 STALE_RESERVATION_HOURS = 6
 
 # subject, historical setting, concise kid-safe fact
@@ -136,7 +143,7 @@ def _build_prompt(topic: tuple[str, str, str], lens: str) -> dict:
     if len(title) > 78:
         title = title[:78].rsplit(" ", 1)[0]
     fingerprint = hashlib.sha256(
-        f"{SEED_VERSION}|{subject}|{lens}".encode("utf-8")
+        f"{KIDS_SEED_VERSION}|{subject}|{lens}".encode("utf-8")
     ).hexdigest()
     return {
         "fingerprint": fingerprint,
@@ -147,7 +154,40 @@ def _build_prompt(topic: tuple[str, str, str], lens: str) -> dict:
     }
 
 
-def initialize_prompt_database(path: str | Path) -> int:
+def _seed_version(channel_id: str) -> str:
+    if channel_id == "channel_3":
+        return KIDS_SEED_VERSION
+    try:
+        return SEED_VERSIONS[channel_id]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported prompt-reserve channel: {channel_id}") from exc
+
+
+def _seed_prompts(channel_id: str) -> list[dict]:
+    if channel_id != "channel_3":
+        return build_channel_prompts(channel_id)
+    return [_build_prompt(topic, lens) for topic in TOPICS for lens in LENSES]
+
+
+def _migrate_prompt_columns(connection: sqlite3.Connection) -> None:
+    existing = {
+        row[1] for row in connection.execute("PRAGMA table_info(prompts)").fetchall()
+    }
+    additions = {
+        "visual_queries_json": "TEXT NOT NULL DEFAULT '[]'",
+        "hook_overlay": "TEXT NOT NULL DEFAULT ''",
+        "hook_accent": "TEXT NOT NULL DEFAULT ''",
+        "evidence_label": "TEXT NOT NULL DEFAULT ''",
+        "source_url": "TEXT NOT NULL DEFAULT ''",
+    }
+    for name, declaration in additions.items():
+        if name not in existing:
+            connection.execute(f"ALTER TABLE prompts ADD COLUMN {name} {declaration}")
+
+
+def initialize_prompt_database(
+    path: str | Path, channel_id: str = "channel_3"
+) -> int:
     db_path = Path(path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path, timeout=30)
@@ -167,6 +207,11 @@ def initialize_prompt_database(path: str | Path) -> int:
                 script TEXT NOT NULL,
                 tags_json TEXT NOT NULL,
                 search_query TEXT NOT NULL,
+                visual_queries_json TEXT NOT NULL DEFAULT '[]',
+                hook_overlay TEXT NOT NULL DEFAULT '',
+                hook_accent TEXT NOT NULL DEFAULT '',
+                evidence_label TEXT NOT NULL DEFAULT '',
+                source_url TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'available'
                     CHECK(status IN ('available', 'reserved')),
                 reserved_by TEXT,
@@ -176,41 +221,82 @@ def initialize_prompt_database(path: str | Path) -> int:
                 ON prompts(status, id);
             """
         )
+        _migrate_prompt_columns(connection)
+        expected_version = _seed_version(channel_id)
+
+        stored_channel = connection.execute(
+            "SELECT value FROM metadata WHERE key='channel_id'"
+        ).fetchone()
+        if stored_channel is None:
+            populated_channels = {
+                row[0] for row in connection.execute(
+                    "SELECT DISTINCT channel_id FROM prompts"
+                ).fetchall()
+            }
+            if populated_channels and populated_channels != {channel_id}:
+                raise RuntimeError(
+                    f"{db_path} contains {sorted(populated_channels)}, not {channel_id}"
+                )
+            connection.execute(
+                "INSERT INTO metadata(key, value) VALUES ('channel_id', ?)",
+                (channel_id,),
+            )
+        elif stored_channel[0] != channel_id:
+            raise RuntimeError(
+                f"{db_path} belongs to {stored_channel[0]}, not {channel_id}"
+            )
+
         seeded = connection.execute(
             "SELECT value FROM metadata WHERE key='seed_version'"
         ).fetchone()
         if seeded is None:
-            rows = []
-            for topic in TOPICS:
-                for lens in LENSES:
-                    prompt = _build_prompt(topic, lens)
-                    rows.append((
-                        prompt["fingerprint"],
-                        prompt["title"],
-                        prompt["script"],
-                        json.dumps(prompt["tags"], separators=(",", ":")),
-                        prompt["search_query"],
-                    ))
-            if len(rows) < 2001:
+            prompts = _seed_prompts(channel_id)
+            if channel_id in {"channel_2", "channel_3", "channel_4"} and len(prompts) < 2001:
                 raise RuntimeError("Prompt reserve seed must contain more than 2,000 rows.")
+            if not prompts:
+                raise RuntimeError(f"Prompt reserve for {channel_id} is empty.")
+            rows = [(
+                prompt["fingerprint"],
+                channel_id,
+                prompt["title"],
+                prompt["script"],
+                json.dumps(prompt["tags"], separators=(",", ":")),
+                prompt["search_query"],
+                json.dumps(prompt.get("visual_queries", []), separators=(",", ":")),
+                prompt.get("hook_overlay", ""),
+                prompt.get("hook_accent", ""),
+                prompt.get("evidence_label", ""),
+                prompt.get("source_url", ""),
+            ) for prompt in prompts]
             connection.executemany(
                 """INSERT OR IGNORE INTO prompts
-                   (fingerprint, title, script, tags_json, search_query)
-                   VALUES (?, ?, ?, ?, ?)""",
+                   (fingerprint, channel_id, title, script, tags_json, search_query,
+                    visual_queries_json, hook_overlay, hook_accent,
+                    evidence_label, source_url)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 rows,
             )
             connection.execute(
                 "INSERT INTO metadata(key, value) VALUES ('seed_version', ?)",
-                (SEED_VERSION,),
+                (expected_version,),
             )
             connection.commit()
-        return int(connection.execute("SELECT COUNT(*) FROM prompts").fetchone()[0])
+        elif seeded[0] != expected_version:
+            raise RuntimeError(
+                f"{db_path} uses seed {seeded[0]}, expected {expected_version}"
+            )
+        connection.commit()
+        return int(connection.execute(
+            "SELECT COUNT(*) FROM prompts WHERE channel_id=?", (channel_id,)
+        ).fetchone()[0])
     finally:
         connection.close()
 
 
-def reserve_prompt(path: str | Path, reservation_id: str) -> dict | None:
-    initialize_prompt_database(path)
+def reserve_prompt(
+    path: str | Path, reservation_id: str, channel_id: str = "channel_3"
+) -> dict | None:
+    initialize_prompt_database(path, channel_id)
     connection = sqlite3.connect(path, timeout=30, isolation_level=None)
     connection.row_factory = sqlite3.Row
     try:
@@ -225,7 +311,9 @@ def reserve_prompt(path: str | Path, reservation_id: str) -> dict | None:
             (stale_before,),
         )
         row = connection.execute(
-            "SELECT * FROM prompts WHERE status='available' ORDER BY id LIMIT 1"
+            """SELECT * FROM prompts
+               WHERE channel_id=? AND status='available' ORDER BY id LIMIT 1""",
+            (channel_id,),
         ).fetchone()
         if row is None:
             connection.execute("COMMIT")
@@ -242,6 +330,11 @@ def reserve_prompt(path: str | Path, reservation_id: str) -> dict | None:
             "script": row["script"],
             "tags": json.loads(row["tags_json"]),
             "search_query": row["search_query"],
+            "visual_queries": json.loads(row["visual_queries_json"]),
+            "hook_overlay": row["hook_overlay"],
+            "hook_accent": row["hook_accent"],
+            "evidence_label": row["evidence_label"],
+            "source_url": row["source_url"],
             "_reserve_prompt_id": row["id"],
             "_prompt_source": "sqlite_reserve",
         }
@@ -264,12 +357,13 @@ def consume_prompt(path: str | Path, prompt_id: int) -> None:
         connection.close()
 
 
-def available_prompt_count(path: str | Path) -> int:
-    initialize_prompt_database(path)
+def available_prompt_count(path: str | Path, channel_id: str = "channel_3") -> int:
+    initialize_prompt_database(path, channel_id)
     connection = sqlite3.connect(path, timeout=30)
     try:
         return int(connection.execute(
-            "SELECT COUNT(*) FROM prompts WHERE status='available'"
+            "SELECT COUNT(*) FROM prompts WHERE channel_id=? AND status='available'",
+            (channel_id,),
         ).fetchone()[0])
     finally:
         connection.close()
@@ -277,5 +371,6 @@ def available_prompt_count(path: str | Path) -> int:
 
 if __name__ == "__main__":
     target = Path(sys.argv[1] if len(sys.argv) > 1 else "prompt_reserve.sqlite3")
-    total = initialize_prompt_database(target)
-    print(f"Initialized {target} with {total} unique prompts")
+    target_channel = sys.argv[2] if len(sys.argv) > 2 else "channel_3"
+    total = initialize_prompt_database(target, target_channel)
+    print(f"Initialized {target} for {target_channel} with {total} unique prompts")

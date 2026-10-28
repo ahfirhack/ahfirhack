@@ -154,15 +154,23 @@ def _normalized_text(value: str) -> str:
 
 
 def _prompt_hashes(channel_id: str, data: dict) -> set[str]:
-    """Create compact title/script/full-prompt hashes for duplicate blocking."""
+    """Create compact channel and global hashes for duplicate blocking."""
     title = _normalized_text(data.get("title", ""))
     script = _normalized_text(data.get("script", ""))
     query = _normalized_text(data.get("search_query", ""))
     values = {"t": title, "s": script, "p": f"{title}|{script}|{query}"}
-    return {
+    hashes = {
         f"{channel_id}:{kind}:{hashlib.sha256(value.encode()).hexdigest()[:16]}"
         for kind, value in values.items() if value
     }
+    # Titles and scripts are also fingerprinted without a channel prefix. This
+    # prevents two different channels from publishing the same episode while
+    # keeping each channel's SQLite reserve physically independent.
+    hashes.update(
+        f"global:{kind}:{hashlib.sha256(value.encode()).hexdigest()[:16]}"
+        for kind, value in {"t": title, "s": script}.items() if value
+    )
+    return hashes
 
 
 def _generate_unique_script(
@@ -218,7 +226,7 @@ def _generate_unique_script(
             f"{channel['id']}:{datetime.datetime.now().isoformat()}:{os.getpid()}"
         )
         while True:
-            data = reserve_prompt(reserve_db, reservation_id)
+            data = reserve_prompt(reserve_db, reservation_id, channel["id"])
             if data is None:
                 break
             if not is_duplicate(data):
@@ -385,7 +393,7 @@ def process_video(
         _save_used_prompts(used_prompts)
         print(
             f"[ScriptGen] Consumed SQLite prompt {reserve_prompt_id}; "
-            f"{available_prompt_count(reserve_db)} prompts remain"
+            f"{available_prompt_count(reserve_db, channel['id'])} prompts remain"
         )
 
     print(f"\n  {channel_name} → https://youtube.com/shorts/{video_id}\n")
