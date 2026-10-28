@@ -12,6 +12,7 @@ Key changes:
 import requests
 import json
 import random
+import re
 import time
 import boto3
 from botocore.exceptions import ClientError
@@ -209,12 +210,22 @@ Respond ONLY with valid JSON (no markdown, no backticks):
 
 
 def _parse_json(raw: str) -> dict:
-    raw = raw.strip()
-    if raw.startswith("```"):
-        raw = raw.lstrip("`").lstrip("json").lstrip("`")
-    if raw.endswith("```"):
-        raw = raw.rstrip("`")
-    return json.loads(raw.strip())
+    """Parse plain, fenced, or reasoning-prefixed provider JSON safely."""
+    raw = raw.strip().lstrip("\ufeff")
+    raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\s*```$", "", raw).strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as original_error:
+        decoder = json.JSONDecoder()
+        for match in re.finditer(r"\{", raw):
+            try:
+                value, _ = decoder.raw_decode(raw[match.start():])
+                if isinstance(value, dict):
+                    return value
+            except json.JSONDecodeError:
+                continue
+        raise original_error
 
 
 def _log_provider_error(provider: str, error: Exception) -> None:
@@ -260,7 +271,33 @@ def _try_groq(prompt: str) -> dict | None:
             headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
             json={"model": "openai/gpt-oss-20b",
                   "messages": [{"role": "user", "content": prompt}],
-                  "temperature": 0.9, "max_tokens": 500},
+                  "temperature": 0.9,
+                  "max_tokens": 500,
+                  "reasoning_effort": "low",
+                  "reasoning_format": "hidden",
+                  "response_format": {
+                      "type": "json_schema",
+                      "json_schema": {
+                          "name": "youtube_short_script",
+                          "strict": True,
+                          "schema": {
+                              "type": "object",
+                              "properties": {
+                                  "title": {"type": "string"},
+                                  "script": {"type": "string"},
+                                  "tags": {
+                                      "type": "array",
+                                      "items": {"type": "string"},
+                                  },
+                                  "search_query": {"type": "string"},
+                              },
+                              "required": [
+                                  "title", "script", "tags", "search_query"
+                              ],
+                              "additionalProperties": False,
+                          },
+                      },
+                  }},
             timeout=(8, 20))  # (connect_timeout, read_timeout)
         if resp.status_code == 429:
             print("[ScriptGen] Groq rate-limited -> next")
