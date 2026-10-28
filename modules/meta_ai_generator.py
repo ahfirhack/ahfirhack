@@ -68,6 +68,10 @@ class MetaAILoginRequired(MetaAIAutomationError):
     """The persistent browser profile is not signed into Meta AI."""
 
 
+class MetaAIVideoUnavailable(MetaAIAutomationError):
+    """The signed-in Meta account is not eligible for video generation."""
+
+
 def _slug(value: str) -> str:
     clean = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return clean[:48] or "episode"
@@ -326,6 +330,39 @@ def _open_create_page(page) -> None:
     _dismiss_consent(page)
 
 
+def _require_video_eligible_account(context, debug_path: Path) -> None:
+    """Fail before rendering when Meta marks the account as Vibes-ineligible."""
+    page = context.new_page()
+    try:
+        page.goto("https://meta.ai/vibes", wait_until="domcontentloaded", timeout=120_000)
+        page.wait_for_timeout(2_000)
+        restriction = page.get_by_text(
+            re.compile(
+                r"teens? under 18 can['’]t use vibes|"
+                r"must be 18 .*use vibes|"
+                r"not eligible .*vibes|"
+                r"meta ai isn['’]t available yet in your country|"
+                r"vibes (?:isn['’]t|is not) available",
+                re.I,
+            )
+        )
+        if _visible_last(restriction) is not None:
+            _take_debug_screenshot(page, debug_path)
+            raise MetaAIVideoUnavailable(
+                "Meta Vibes video generation is unavailable for this account "
+                "or region. Export a session from a supported, eligible Meta "
+                "account age 18 or older."
+            )
+    except MetaAIVideoUnavailable:
+        raise
+    except Exception:
+        # The Create workflow remains the source of truth if the optional Vibes
+        # eligibility page is unavailable or its layout changes.
+        return
+    finally:
+        page.close()
+
+
 def _find_prompt_editor(page, timeout_seconds: int = 30):
     selectors = [
         "textarea[placeholder*='Describe' i]", "textarea[placeholder*='Ask' i]",
@@ -448,7 +485,7 @@ def _wait_for_media(page, media_kind: str, baseline: set[str]) -> str:
                 )
             )
             if _visible_last(unavailable) is not None:
-                raise MetaAIAutomationError(
+                raise MetaAIVideoUnavailable(
                     f"Meta AI reports that {media_kind} generation is not "
                     "available for the signed-in account."
                 )
@@ -596,6 +633,9 @@ def ensure_rendered_clips(manifest: dict, job_dir: Path) -> list[str]:
     with sync_playwright() as playwright:
         context, browser = _launch_context(playwright, profile_dir, headless=META_AI_HEADLESS)
         try:
+            _require_video_eligible_account(
+                context, job_dir / "debug" / "video-eligibility.png"
+            )
             prior_frame: Path | None = None
             for scene in manifest["scenes"]:
                 target = renders_dir / scene["filename"]
@@ -627,6 +667,8 @@ def ensure_rendered_clips(manifest: dict, job_dir: Path) -> list[str]:
                         last_error = None
                         break
                     except MetaAILoginRequired:
+                        raise
+                    except MetaAIVideoUnavailable:
                         raise
                     except Exception as error:
                         last_error = error

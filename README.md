@@ -135,10 +135,11 @@ three videos from the permanent prompt, assembles the Short, and uploads it. If
 Meta expires or challenges the session, the workflow stops before upload;
 repeat the login/export command to refresh the secret.
 
-The signed-in Meta account must be eligible for Vibes video generation and be
-18 or older. Check `https://meta.ai/vibes` before exporting the session. If it
-shows an age restriction or Meta replies that video generation is unavailable,
-the pipeline fails immediately and does not substitute still images or GIFs.
+The signed-in Meta account must be eligible for Vibes video generation, be 18
+or older, and be in a supported region. Check `https://meta.ai/vibes` before
+exporting the session. If it shows an age/region restriction or Meta replies
+that video generation is unavailable, the pipeline fails immediately and does
+not substitute still images or GIFs.
 
 Prepare a prompt job without rendering or uploading:
 
