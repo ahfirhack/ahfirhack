@@ -421,9 +421,8 @@ def _media_sources(page, media_kind: str) -> list[str]:
         script = """elements => elements.map(element => ({
             src: element.currentSrc || element.src || (element.querySelector('source') || {}).src || '',
             width: element.videoWidth || element.clientWidth || 0,
-            height: element.videoHeight || element.clientHeight || 0,
-            ready: element.readyState || 0
-        })).filter(item => item.src && item.width >= 200 && item.height >= 200 && item.ready >= 2)
+            height: element.videoHeight || element.clientHeight || 0
+        })).filter(item => item.src && item.width >= 200 && item.height >= 200)
         .map(item => item.src)"""
         selector = "video"
     else:
