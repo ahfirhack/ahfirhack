@@ -8,12 +8,12 @@ Vertical video plus script, prompt, title, and clip deduplication are included.
 
 ## Channels
 
-| # | Channel | Niche | Music Mood |
-|---|---------|-------|------------|
-| 1 | **Psychology & Human Behavior** | Psychology facts, social behavior, and cognitive biases | Suspenseful |
-| 2 | **The History Mystery** | Forgotten history, ancient technology, and historical mysteries | Mysterious |
-| 3 | **Epic History Kids** | Kid-safe stories about civilizations, people, inventions, and discoveries | Playful |
-| 4 | **The Modern Stoic** | Ancient wisdom applied to modern stress and mental health | Epic cinematic |
+| # | Channel | Handle | Niche | Music Mood |
+|---|---------|--------|-------|------------|
+| 1 | **MindSpark Secrets** | `@MindSparkSecrets` | Psychology facts, social behavior, and cognitive biases | Suspenseful |
+| 2 | **StoryFuse** | `@StoryFuseTV` | Cinematic deep storytelling, escalating stakes, and twist endings | Mysterious |
+| 3 | **Epic History Kids** | `@EpicHistoryKids` | Kid-safe stories about civilizations, people, inventions, and discoveries | Playful |
+| 4 | **Stoic Reset** | `@StoicResetShorts` | Ancient wisdom applied to modern stress and mental health | Epic cinematic |
 
 ---
 
@@ -39,10 +39,10 @@ python auth_tokens.py
 
 This opens your browser **4 times** — sign in with the correct Google account for each channel.  
 Token files are saved in `credentials/`:
-- `channel1_token.json` → Psychology & Human Behavior
-- `channel2_token.json` → The History Mystery
+- `channel1_token.json` → MindSpark Secrets
+- `channel2_token.json` → StoryFuse
 - `channel3_token.json` → Epic History Kids
-- `channel4_token.json` → The Modern Stoic
+- `channel4_token.json` → Stoic Reset
 
 ---
 
@@ -63,10 +63,10 @@ Go to: **Repo → Settings → Secrets and variables → Actions → New reposit
 | Secret Name | Value |
 |-------------|-------|
 | `CLIENT_SECRETS_B64` | base64 of `credentials/client_secrets.json` |
-| `CHANNEL1_TOKEN_B64` | base64 of `credentials/channel1_token.json` (Psychology & Human Behavior) |
-| `CHANNEL2_TOKEN_B64` | base64 of `credentials/channel2_token.json` (The History Mystery) |
+| `CHANNEL1_TOKEN_B64` | base64 of `credentials/channel1_token.json` (MindSpark Secrets) |
+| `CHANNEL2_TOKEN_B64` | base64 of `credentials/channel2_token.json` (StoryFuse) |
 | `CHANNEL3_TOKEN_B64` | base64 of `credentials/channel3_token.json` (Epic History Kids) |
-| `CHANNEL4_TOKEN_B64` | base64 of `credentials/channel4_token.json` (The Modern Stoic) |
+| `CHANNEL4_TOKEN_B64` | base64 of `credentials/channel4_token.json` (Stoic Reset) |
 | `OPENROUTER_API_KEY` | optional free-tier prompt-provider key |
 | `CEREBRAS_API_KEY` | optional free-tier prompt-provider key |
 

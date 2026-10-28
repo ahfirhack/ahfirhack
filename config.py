@@ -83,7 +83,7 @@ VIDEO_CRF     = 16     # Lower CRF = higher quality
 # Using Deepgram models for each channel theme
 CHANNEL_VOICES = {
     "channel_1": "aura-2-zeus-en",      # Psychology: Deep, commanding, dramatic
-    "channel_2": "aura-2-orpheus-en",   # History: Authoritative, discovery-channel vibe
+    "channel_2": "aura-2-orpheus-en",   # Storytelling: Authoritative, cinematic tension
     "channel_3": "aura-2-atlas-en",     # Kids history: Friendly, energetic storyteller
     "channel_4": "aura-odysseus-en",    # Stoic: Calm, steady, philosophical
 }
@@ -91,7 +91,7 @@ CHANNEL_VOICES = {
 # Edge TTS fallback voices (if Deepgram fails)
 EDGE_VOICES = {
     "channel_1": "en-US-GuyNeural",      # Male, energetic
-    "channel_2": "en-GB-RyanNeural",      # Male, British, serious
+    "channel_2": "en-GB-RyanNeural",      # Male, British, dramatic storyteller
     "channel_3": "en-US-GuyNeural",       # Milo: fixed energetic male narrator
     "channel_4": "en-US-ChristopherNeural", # Male, deep, authoritative
 }
@@ -114,7 +114,12 @@ UPLOAD_HOUR_UTC = 6   # 21:00 UTC = 5:00 PM EST = 2:00 PM PST
 CHANNELS = [
     {
         "id": "channel_1",
-        "name": "Psychology & Human Behavior", # Fast viral potential, broad audience
+        "name": "MindSpark Secrets",
+        "handle": "@MindSparkSecrets",
+        "tagline": "Decode Behavior. Upgrade Your Mind.",
+        "description": "Your brain makes decisions before you notice. MindSpark Secrets turns psychology, cognitive biases, habits, and human behavior into vivid, practical Shorts. Every episode gives you one surprising mechanism, one real-world example, and one takeaway you can use today. Subscribe to decode behavior and upgrade your mind.",
+        "logo_file": "assets/branding/channel_1/logo.png",
+        "banner_file": "assets/branding/channel_1/banner.jpg",
         "niche": "Psychology facts, human behavior patterns, mind tricks, social psychology, and cognitive biases explained simply",
         "keywords": ["psychology", "human behavior", "mind tricks", "social psychology", "cognitive bias", "psychology facts"],
         "client_secrets_file": "credentials/channel1_secrets.json",
@@ -130,16 +135,21 @@ CHANNELS = [
     },
     {
         "id": "channel_2",
-        "name": "The History Mystery", # PIVOT: From Weird Facts to Historical Deep Dives
-        "niche": "Deep dives into forgotten history, ancient technology, and unsolved historical mysteries",
-        "keywords": ["lost history", "ancient mystery", "unsolved mysteries", "archaeology", "historical puzzles"],
+        "name": "StoryFuse",
+        "handle": "@StoryFuseTV",
+        "tagline": "Big Stakes. Sharp Twists. No Filler.",
+        "description": "Every second should earn the next. StoryFuse delivers cinematic short stories built around impossible choices, hidden motives, escalating stakes, and endings that change what came before. No filler greetings—just a gripping hook, fast reveals, and a payoff worth replaying. Subscribe and follow the fuse to the final twist.",
+        "logo_file": "assets/branding/channel_2/logo.png",
+        "banner_file": "assets/branding/channel_2/banner.jpg",
+        "niche": "Deep high-retention storytelling with cinematic stakes, memorable characters, mysteries, impossible choices, escalating micro-reveals, emotional climaxes, and twist endings",
+        "keywords": ["short stories", "storytelling", "plot twist", "cinematic stories", "mystery stories", "emotional stories"],
         "client_secrets_file": "credentials/channel2_secrets.json",
         "token_file": "credentials/channel2_token.json",
         "use_voice": True,
         "music_mood": "mysterious",
-        "category_id": "27",
-        "hook_style": "question_unsolved", # Start with a mystery no one can explain
-        "script_type": "documentary",
+        "category_id": "24",
+        "hook_style": "climax_first",
+        "script_type": "deep_storytelling",
         "strict_ai_prompts": True,
         "track_prompt_history": True,
         "strict_upload_dedup": True,
@@ -173,7 +183,12 @@ CHANNELS = [
     },
     {
         "id": "channel_4",
-        "name": "The Modern Stoic", # PIVOT: From Self-Improvement to Men's Mental Health/Stoicism
+        "name": "Stoic Reset",
+        "handle": "@StoicResetShorts",
+        "tagline": "Ancient Wisdom. Modern Strength.",
+        "description": "Ancient wisdom for modern pressure. Stoic Reset turns Stoic principles into practical tools for overthinking, burnout, discipline, relationships, and resilience—without fake quotes or empty motivation. Each Short gives you one calm idea and one action you can use today. Subscribe, reset, and build a stronger mind.",
+        "logo_file": "assets/branding/channel_4/logo.png",
+        "banner_file": "assets/branding/channel_4/banner.jpg",
         "niche": "Applying ancient wisdom to modern stress, career burnout, and relationship mental health",
         "keywords": ["stoicism", "mental toughness", "modern philosophy", "career advice", "emotional intelligence"],
         "client_secrets_file": "credentials/channel4_secrets.json",

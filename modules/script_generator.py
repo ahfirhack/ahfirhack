@@ -52,11 +52,11 @@ NICHE_SEARCH_HINTS = {
         "mind trick demonstration",
     ],
     "storytelling": [
-        "person walking away satisfied",
-        "angry person looking at construction",
-        "person smiling after winning",
-        "dramatic sunset over city",
-        "person looking at phone surprised",
+        "worried person opening sealed letter cinematic close up",
+        "lone driver on rainy road at night",
+        "silhouette waiting in doorway dramatic lighting",
+        "person answering phone in empty room suspense",
+        "pocket watch ticking beside old photograph",
     ],
     "documentary": [
         "ancient artifact close up",
@@ -174,13 +174,20 @@ def _get_fallback(niche: str) -> dict:
 
 
 def _build_prompt(niche: str, uniqueness_seed: str = "") -> str:
-    kids_history = _detect_niche_key(niche) == "kids_history"
+    niche_key = _detect_niche_key(niche)
+    kids_history = niche_key == "kids_history"
     length_rule = (
         "50-65 words, written for a 30-second narration."
-        if kids_history else
-        "80-90 words, written for a 30-40 second narration."
+        if kids_history else (
+            "70-80 words, written for a tightly paced 30-second story."
+            if niche_key == "storytelling" else
+            "80-90 words, written for a 30-40 second narration."
+        )
     )
-    json_length = "50-65" if kids_history else "80-90"
+    json_length = (
+        "50-65" if kids_history else
+        ("70-80" if niche_key == "storytelling" else "80-90")
+    )
     kids_rules = """
 KIDS' HISTORY EPISODE RULES:
 - Tell one accurate, chronological story with three clear visual beats.
@@ -189,9 +196,68 @@ KIDS' HISTORY EPISODE RULES:
 - Group the narration into three concrete visual beats, one for each ten-second animated scene.
 - Never change Milo's appearance, clothing, age, or personality.
 """ if kids_history else ""
+    non_kids_rules = {
+        "psychology": """
+MINDSPARK SECRETS EPISODE RULES:
+- Build the episode around one specific, scientifically grounded behavior mechanism or cognitive bias.
+- Open with a relatable moment that makes viewers recognize themselves, then explain why it happens and end with one practical action.
+- Do not diagnose viewers, promise medical results, or present weak pop-psychology claims as settled science.
+- The title must create a curiosity gap around the exact behavior. Never use generic titles such as "Mind Tricks", "Mind Blown", or "Psychology Facts".
+- Give the search query a concrete person, action, setting, and visible emotion that can support three polished visual beats.
+""",
+        "documentary": """
+PAST UNSEALED EPISODE RULES:
+- Center the episode on one real named artifact, site, person, document, invention, or event—not a generic ancient mystery.
+- Separate verified evidence from uncertainty. Never invent discoveries, exaggerate scholarly claims, or use pseudo-history as fact.
+- Structure three cinematic beats: the discovery, the strongest evidence, and the unresolved question or revealing conclusion.
+- Put the specific proper noun or place in a curiosity-driven title. Never use "The Machine That Shouldn't Exist", "Lost City", or "Ancient Secrets" by themselves.
+- Make the search query historically specific, visual, and filmable, including the subject, location or era, and an action or camera detail.
+""",
+        "storytelling": """
+STORYFUSE HIGH-RETENTION FRAMEWORK — COMPRESS THIS INTO 30 SECONDS:
+- 0:00-0:03 THE HOOK: Open on a jaw-dropping climax fragment, contradiction, impossible choice, or consequence. Withhold the explanation. No greetings or setup filler.
+- 0:03-0:10 THE INCIDENT: Name one memorable main character, reveal the triggering event, and make the stakes immediately clear.
+- 0:10-0:22 THE ESCALATION: Deliver two or three concrete micro-reveals. Each reveal must change the viewer's understanding, raise the cost, and arrive every 4-6 seconds.
+- 0:22-0:28 THE CLIMAX: Pay off the central mystery with a sharp reveal, irreversible decision, or emotionally satisfying reversal.
+- 0:28-0:30 THE LOOP/CTA: Write a punchy final line that naturally reframes the opening image, then end with "Like and Subscribe for more". Do not repeat the first sentence verbatim.
+- Use one clear protagonist, one central conflict, active verbs, concrete sensory detail, and short spoken sentences. Every sentence must advance the story.
+- Prefer original cinematic fiction about impossible choices, survival, loyalty, betrayal, sacrifice, mystery, or consequences. Never claim an invented story is true. Do not use real private people, graphic violence, cruelty, or exploitative tragedy.
+- Title: 5-9 words that tease the central contradiction without spoiling the climax. Avoid vague templates such as "What Happened Next", "You Won't Believe This", or "The Neighbor Who Regretted Everything".
+- The search query must depict the hook's exact character, action, setting, mood, lighting, and camera framing for visually coherent footage.
+""",
+        "educational": """
+STOIC RESET EPISODE RULES:
+- Start with one precise modern struggle such as overthinking a message, workplace criticism, envy, procrastination, or losing control in an argument.
+- Explain one accurate Stoic principle, then give one small action the viewer can take today.
+- Paraphrase ancient thinkers unless a quotation is verified. Never invent or misattribute a quote, and never make mental-health treatment claims.
+- The title must pair a recognizable pain point with a clear emotional promise. Never use generic titles such as "Burnout Alert", "Stoic Motivation", or "The Secret to Not Caring".
+- Use three visually distinct beats and a concrete search query showing a person taking an observable action in a modern setting.
+""",
+    }.get(niche_key, """
+EPISODE QUALITY RULES:
+- Cover one specific subject through three visually distinct beats and finish with one practical takeaway.
+- Keep every factual claim supportable and avoid generic motivation or exaggerated promises.
+""") if not kids_history else ""
+    non_kids_global_rules = """
+9. TITLE: Use 5-10 words and stay under 60 characters. Make it specific, natural, and curiosity-driven. No episode numbers, vague clickbait, all caps, or recycled title templates.
+10. VISUAL PACING: Write three connected beats that can be illustrated cleanly without dead space. Each beat must add new information and maintain forward motion.
+""" if not kids_history else ""
+    non_kids_visual_rule = """
+VISUAL SEQUENCE RULE: Also return visual_queries as exactly three concrete stock-footage searches in story order—hook, escalation, payoff. Each query must name a visible subject, action, setting, mood or lighting, and camera framing. For a story, repeat the protagonist's same visible traits in every query so the footage feels continuous.
+""" if not kids_history else ""
+    non_kids_json_field = (
+        ', "visual_queries": ["hook shot", "escalation shot", "payoff shot"]'
+        if not kids_history else
+        ""
+    )
+    unique_focus = (
+        "historical subject and angle"
+        if kids_history else
+        "subject, premise, and angle"
+    )
     uniqueness_rule = (
         f"UNIQUE EPISODE SEED: {uniqueness_seed}. Use this seed to choose a fresh "
-        "historical subject and angle. Never mention the seed in the output."
+        f"{unique_focus}. Never mention the seed in the output."
         if uniqueness_seed else
         "Choose a fresh subject and angle that is unlikely to repeat an earlier episode."
     )
@@ -199,6 +265,7 @@ KIDS' HISTORY EPISODE RULES:
 
 Niche: {niche}
 {kids_rules}
+{non_kids_rules}
 {uniqueness_rule}
 
 VOICE-OPTIMIZED RULES:
@@ -214,13 +281,65 @@ VOICE-OPTIMIZED RULES:
 6. SENTENCE LENGTH: 5-12 words max. Short sentences keep generated speech clear.
 7. CRITICAL: Do NOT repeat the first sentence at the end. The loop should be thematic, not literal repetition.
 8. CRITICAL: End with "Like and Subscribe for more" as the final call-to-action.
+{non_kids_global_rules}
 
 SEARCH QUERY RULE: The search_query must describe CLEAR VISUAL ACTION for stock footage.
 GOOD: "person studying english book", "teacher writing on whiteboard", "student taking notes"
 BAD: "success", "mystery", "hacks"
+{non_kids_visual_rule}
 
 Respond ONLY with valid JSON (no markdown, no backticks):
-{{"title": "Searchable title under 60 chars", "script": "{json_length} word voice-ready script ending with Like and Subscribe for more", "tags": ["tag1","tag2","tag3","tag4","tag5"], "search_query": "specific visual description"}}"""
+{{"title": "Searchable title under 60 chars", "script": "{json_length} word voice-ready script ending with Like and Subscribe for more", "tags": ["tag1","tag2","tag3","tag4","tag5"], "search_query": "specific visual description"{non_kids_json_field}}}"""
+
+
+GENERIC_TITLES = {
+    "psychology": {
+        "the memory trick that always works",
+        "why we judge people so quickly",
+        "the power of saying no",
+        "mind tricks",
+        "mind blown",
+        "psychology facts",
+    },
+    "documentary": {
+        "the machine that shouldnt exist",
+        "lost city",
+        "ancient secrets",
+        "ancient technology",
+        "history mystery",
+    },
+    "storytelling": {
+        "the neighbor who regretted everything",
+        "what happened next",
+        "you wont believe this",
+        "wait until the end",
+        "a story with a twist",
+    },
+    "educational": {
+        "burnout alert",
+        "stoic motivation",
+        "the secret to not caring what people think",
+        "the secret to not caring",
+        "burned out",
+    },
+}
+
+
+def _normalize_title(title: str) -> str:
+    """Normalize a title for template-quality checks, not upload deduplication."""
+    collapsed_apostrophes = str(title).lower().replace("'", "").replace("’", "")
+    return re.sub(r"[^a-z0-9]+", " ", collapsed_apostrophes).strip()
+
+
+def _reject_generic_title(title: str, niche_key: str) -> bool:
+    normalized = _normalize_title(title)
+    word_count = len(normalized.split())
+    return (
+        not normalized
+        or normalized in GENERIC_TITLES.get(niche_key, set())
+        or not 4 <= word_count <= 12
+        or len(str(title).strip()) >= 60
+    )
 
 
 def _parse_json(raw: str) -> dict:
@@ -649,13 +768,22 @@ def generate_script(
         (_try_amazon, "Amazon Bedrock"),
     ]
     niche_key = _detect_niche_key(niche)
-    min_words, max_words = (48, 70) if niche_key == "kids_history" else (MIN_WORDS, MAX_WORDS)
+    if niche_key == "kids_history":
+        min_words, max_words = (48, 70)
+    elif niche_key == "storytelling":
+        min_words, max_words = (68, 85)
+    else:
+        min_words, max_words = (MIN_WORDS, MAX_WORDS)
 
     for fn, name in providers:
         result = fn(prompt)
         if not result:
             continue
         if not all(k in result for k in ("title", "script", "tags", "search_query")):
+            continue
+
+        if niche_key != "kids_history" and _reject_generic_title(result["title"], niche_key):
+            print(f"[ScriptGen] {name}: generic or weak title rejected -> next provider")
             continue
 
         # Post-process the script

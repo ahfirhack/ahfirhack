@@ -24,13 +24,13 @@ GITHUB_PAT = os.getenv("YOUTUBE_BOT_GITHUB_PAT", "")
 CHANNELS = [
     {
         "id":      1,
-        "name":    "Karma & Revenge Stories", # PIVOT: High Retention
+        "name":    "MindSpark Secrets",
         "secrets": "credentials/channel1_secrets.json",
         "token":   "credentials/channel1_token.json",
     },
     {
         "id":      2,
-        "name":    "The History Mystery",      # PIVOT: Educational/Documentary
+        "name":    "StoryFuse",
         "secrets": "credentials/channel2_secrets.json",
         "token":   "credentials/channel2_token.json",
     },
@@ -42,7 +42,7 @@ CHANNELS = [
     },
     {
         "id":      4,
-        "name":    "The Modern Stoic",         # PIVOT: Men's Mental Health
+        "name":    "Stoic Reset",
         "secrets": "credentials/channel4_secrets.json",
         "token":   "credentials/channel4_token.json",
     },

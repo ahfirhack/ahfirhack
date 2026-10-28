@@ -325,6 +325,7 @@ def process_video(
             num_clips=CLIP_COUNT,
             script=script,
             niche_keywords=channel.get("keywords", []),
+            visual_queries=data.get("visual_queries", []),
         )
 
     # 5. Assemble (Full HD 1080x1920, 9:16 Shorts)

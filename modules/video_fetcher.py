@@ -34,12 +34,24 @@ def _mark_used(video_id: str, used: set):
 
 
 # ── Query Builder ────────────────────────────────────────────
-def build_search_queries(primary_query: str, script: str = "", niche_keywords: list = None) -> list:
+def build_search_queries(
+    primary_query: str,
+    script: str = "",
+    niche_keywords: list = None,
+    visual_queries: list | None = None,
+) -> list:
     """
     Generate 3-5 varied search queries from the primary query + script content.
     This ensures video clips actually match the topic instead of being generic.
     """
-    queries = [primary_query]
+    # AI-generated beat queries come first so the selected clips follow the
+    # episode's hook -> escalation -> payoff order.
+    queries = [
+        str(query).strip()
+        for query in (visual_queries or [])[:3]
+        if isinstance(query, str) and len(query.split()) >= 3
+    ]
+    queries.append(primary_query)
 
     # Extract meaningful 2-3 word phrases from the script
     if script:
@@ -329,6 +341,7 @@ def fetch_video_clips(
     min_duration: int = 5,
     script: str = "",
     niche_keywords: list = None,
+    visual_queries: list | None = None,
 ) -> list:
     """
     Fetches video clips from ALL sources, deduplicates, and downloads.
@@ -344,7 +357,7 @@ def fetch_video_clips(
     used = _load_used()
 
     # Build multiple topic-relevant queries
-    queries = build_search_queries(query, script, niche_keywords)
+    queries = build_search_queries(query, script, niche_keywords, visual_queries)
     print(f"[Fetcher] Queries: {queries}")
 
     # Collect candidates from ALL sources across ALL queries
@@ -369,15 +382,33 @@ def fetch_video_clips(
                 for item in batch:
                     if item["id"] not in seen_ids:
                         seen_ids.add(item["id"])
+                        item = dict(item)
+                        item["beat_query"] = q
                         candidates.append(item)
                 if batch:
                     print(f"[Fetcher] {name} -> {len(batch)} clips for '{q}'")
             except Exception as e:
                 print(f"[Fetcher] {name} failed for '{q}': {e}")
 
-    # Shuffle to mix sources, then pick top N
-    random.shuffle(candidates)
-    selected = candidates[:num_clips]
+    # Preserve narrative order by selecting one clip for each of the first
+    # beat queries, then fill remaining slots from a shuffled source mix.
+    selected = []
+    selected_ids = set()
+    for beat_query in queries[:3]:
+        matches = [
+            item for item in candidates
+            if item.get("beat_query") == beat_query and item["id"] not in selected_ids
+        ]
+        if matches:
+            choice = random.choice(matches)
+            selected.append(choice)
+            selected_ids.add(choice["id"])
+        if len(selected) >= num_clips:
+            break
+
+    remaining = [item for item in candidates if item["id"] not in selected_ids]
+    random.shuffle(remaining)
+    selected.extend(remaining[:max(0, num_clips - len(selected))])
 
     if not selected:
         print(f"[Fetcher] No clips found for any query. Trying bare niche keywords...")

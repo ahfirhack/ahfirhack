@@ -40,16 +40,45 @@ FONT_DOWNLOAD_URLS_REGULAR = {
     "Lato-Regular":       "https://github.com/google/fonts/raw/main/ofl/lato/Lato-Regular.ttf",
 }
 
-VISUAL_HOOKS = [
-    "WATCH THIS",
-    "WAIT FOR IT",
-    "YOU NEED THIS",
-    "TRY THIS NOW",
-    "DID YOU KNOW",
-    "STOP SCROLLING",
-    "MIND BLOWN",
-    "GAME CHANGER",
-]
+CHANNEL_THEMES = {
+    "mindspark secrets": {
+        "accent": "0x61E7FF",
+        "tagline": "DECODE BEHAVIOR. UPGRADE YOUR MIND.",
+        "hooks": (
+            "YOUR BRAIN DID THIS",
+            "WHY YOU DO THIS",
+            "YOUR MIND HAS A BLIND SPOT",
+        ),
+    },
+    "storyfuse": {
+        "accent": "0xFF5A36",
+        "tagline": "BIG STAKES. SHARP TWISTS. NO FILLER.",
+        "hooks": (
+            "THIS CHANGES EVERYTHING",
+            "THE CHOICE WAS IMPOSSIBLE",
+            "THEN THE TRUTH ARRIVED",
+        ),
+    },
+    "stoic reset": {
+        "accent": "0xE8B56A",
+        "tagline": "ANCIENT WISDOM. MODERN STRENGTH.",
+        "hooks": (
+            "RESET YOUR RESPONSE",
+            "CONTROL THIS FIRST",
+            "PAUSE BEFORE YOU REACT",
+        ),
+    },
+}
+
+DEFAULT_THEME = {
+    "accent": "0xFFFF00",
+    "tagline": "ONE IDEA. ONE ACTION.",
+    "hooks": ("WATCH THIS", "DID YOU KNOW", "TRY THIS NOW"),
+}
+
+
+def _channel_theme(channel_name: str) -> dict:
+    return CHANNEL_THEMES.get(channel_name.lower().strip(), DEFAULT_THEME)
 
 
 def _resolve_font(bold=True) -> str:
@@ -206,8 +235,11 @@ def _safe_text(text: str) -> str:
             .replace(",", "").replace(";", "").replace("%", ""))
 
 
-def _build_hook_filter(font_bold: str) -> str:
-    hook_text = random.choice(VISUAL_HOOKS)
+def _build_hook_filter(font_bold: str, channel_name: str = "") -> str:
+    theme = _channel_theme(channel_name)
+    hook_text = random.choice(theme["hooks"])
+    accent = theme["accent"]
+    tagline = _safe_text(theme["tagline"])
     filters = []
     # 1. Stylish Top & Bottom Dark Vignette 
     # This darkens the top and bottom 25% of the screen for a cinematic feel
@@ -218,25 +250,27 @@ def _build_hook_filter(font_bold: str) -> str:
         f"drawbox=y={HEIGHT}*0.75:w={WIDTH}:h={HEIGHT}/4:color=black@0.5:t=fill:enable='lt(t,2.2)'"
     )
     
-    # 2. The Stylish Hook Text (Neon Yellow + Shadow)
+    # 2. A channel-specific branded hook with a strong mobile-safe outline.
     filters.append(
         f"drawtext="
         f"fontfile='{font_bold}':"
         f"text='{hook_text}':"
-        f"fontsize=110:"         # Extra large for maximum style
-        f"fontcolor=0xFFFF00:"   # Bright Neon Yellow
-        f"borderw=12:bordercolor=black@0.8:" # Heavy soft-edge border
-        f"x=(w-text_w)/2:y=(h-text_h)/2-100:" # Shifted slightly up for better framing
-        f"enable='lt(t,2.2)'"    # Hold slightly longer
+        f"fontsize=96:"
+        f"fontcolor={accent}:"
+        f"borderw=10:bordercolor=black@0.9:"
+        f"shadowx=6:shadowy=6:shadowcolor=black@0.65:"
+        f"x=(w-text_w)/2:y=(h-text_h)/2-100:"
+        f"enable='lt(t,2.2)'"
     )
-    
-    # 3. "Emotional" Sub-Hook (Smaller, white text below the main hook)
+
+    # 3. Reinforce the channel's promise instead of a generic wait-for-it line.
     filters.append(
         f"drawtext="
         f"fontfile='{font_bold}':"
-        f"text='(Wait for the end)':"
-        f"fontsize=50:"
+        f"text='{tagline}':"
+        f"fontsize=38:"
         f"fontcolor=white:"
+        f"borderw=4:bordercolor=black@0.8:"
         f"x=(w-text_w)/2:y=(h-text_h)/2+20:"
         f"enable='lt(t,2.2)'"
     )
@@ -281,6 +315,7 @@ def _build_caption_filter(
                 f"fontsize={SHORT_SCRIPT_FONTSIZE}:"
                 f"fontcolor=white:"
                 f"borderw=3:bordercolor=black:"
+                f"box=1:boxcolor=black@0.42:boxborderw=14:"
                 f"x=(w-text_w)/2:y={y}:"
                 f"enable='between(t,0,{total_dur:.2f})'"
             )
@@ -326,6 +361,7 @@ def _build_caption_filter(
                 f"fontsize={CAPTION_FONTSIZE}:"
                 f"fontcolor=white:"
                 f"borderw=4:bordercolor=black:"
+                f"box=1:boxcolor=black@0.42:boxborderw=16:"
                 f"x=(w-text_w)/2:y={y}:"
                 f"enable='between(t,{t_start:.2f},{t_end:.2f})'"
             )
@@ -343,7 +379,15 @@ def _build_end_screen_filter(
         return ""
     t0 = total_dur - end_screen_duration
     eb = f"gte(t,{t0:.2f})"
-    return f"drawbox=x=0:y=0:w={WIDTH}:h={HEIGHT}:color=black@0.8:t=fill:enable='{eb}'"
+    theme = _channel_theme(channel_name)
+    accent = theme["accent"]
+    safe_name = _safe_text(channel_name.upper())
+    return ",".join([
+        f"drawbox=x=0:y=0:w={WIDTH}:h={HEIGHT}:color=black@0.88:t=fill:enable='{eb}'",
+        f"drawbox=x={WIDTH}*0.18:y={HEIGHT}*0.39:w={WIDTH}*0.64:h=8:color={accent}:t=fill:enable='{eb}'",
+        f"drawtext=fontfile='{font_bold}':text='{safe_name}':fontsize=76:fontcolor=white:borderw=5:bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2-90:enable='{eb}'",
+        f"drawtext=fontfile='{font_bold}':text='SUBSCRIBE FOR MORE':fontsize=48:fontcolor={accent}:borderw=4:bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2+40:enable='{eb}'",
+    ])
 
 
 def _concat_seamless_scenes(
@@ -547,7 +591,7 @@ def assemble_video(
     if show_overlays:
         fb = _resolve_font(True)
         fr = _resolve_font(False)
-        hook_f = _build_hook_filter(fb)
+        hook_f = _build_hook_filter(fb, channel_name)
         caption_f = _build_caption_filter(script, total, fb, end_duration)
         end_f = _build_end_screen_filter(total, fb, fr, channel_name, end_duration)
         parts = [p for p in [hook_f, caption_f, end_f] if p]
