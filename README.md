@@ -69,6 +69,12 @@ Go to: **Repo → Settings → Secrets and variables → Actions → New reposit
 | `CHANNEL4_TOKEN_B64` | base64 of `credentials/channel4_token.json` (Stoic Reset) |
 | `OPENROUTER_API_KEY` | optional free-tier prompt-provider key |
 | `CEREBRAS_API_KEY` | optional free-tier prompt-provider key |
+| `HF_TOKEN` | optional Hugging Face Inference Providers token |
+| `MISTRAL_API_KEY` | optional Mistral free/experimental-tier key |
+| `COHERE_API_KEY` | optional Cohere trial-tier key |
+| `NVIDIA_API_KEY` | optional NVIDIA NIM developer key |
+| `CLOUDFLARE_API_TOKEN` | optional Workers AI token |
+| `CLOUDFLARE_ACCOUNT_ID` | required with the Workers AI token |
 
 ---
 
@@ -92,6 +98,9 @@ You can also trigger it manually: **Actions → daily_upload → Run workflow**
   `prompt_reserve_channel_1.sqlite3`, `prompt_reserve_channel_2.sqlite3`,
   `prompt_reserve.sqlite3` (Channel 3), and `prompt_reserve_channel_4.sqlite3`.
   All state is committed after each run.
+- Ready-prompt counts are **Channel 1: 4 verified public-record cases**,
+  **Channel 2: 2,048**, **Channel 3: 2,560**, and **Channel 4: 2,048**.
+  A used reserve row is deleted only after YouTube confirms the upload.
 
 ---
 
@@ -115,11 +124,13 @@ Channels 1, 2, and 4 use locked, channel-specific Edge voices, synchronized
 two-line captions, and episode-specific hook cards. Channel 3 adds no hook
 text, captions, end screen, external voiceover, or background music.
 
-The script generator discovers currently active provider models at runtime and
-fails over across Groq, OpenRouter Free, Cerebras, Gemini, Nova, Claude, and
-Amazon Bedrock. A daily `AI Script Generator Health` workflow validates fresh
-scripts and packaging for Channels 1, 2, and 4 so retired models or provider
-schema changes are detected before an upload run.
+The script generator has twelve integrations and discovers currently active
+models at runtime where catalogs are available. Its failover chain is Groq,
+Hugging Face Router, Mistral, NVIDIA NIM, Cloudflare Workers AI, OpenRouter
+Free, Cerebras, Cohere, Gemini, Nova, Claude, and Amazon Bedrock. Missing keys
+are skipped automatically. A daily `AI Script Generator Health` workflow
+validates fresh scripts and packaging for Channels 1, 2, and 4 so retired
+models or provider schema changes are detected before an upload run.
 
 ### Epic History Kids — automated Meta AI Create workflow
 

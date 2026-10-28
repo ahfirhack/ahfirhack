@@ -2,7 +2,7 @@
 script_generator.py (v9 — Conversational Voice-Optimized Scripts)
 Key changes:
 - Scripts written for VOICE (conversational, easy to listen to)
-- Discovers active models across seven prompt providers at runtime
+- Discovers active models across twelve prompt providers at runtime
 - Shorter scripts (80-100 words = ~35s) for higher completion rate
 - Searchable titles ("How to...", "Why...") for Shorts search filter
 - Loop-friendly endings that reference the hook
@@ -23,8 +23,14 @@ from config import (
     ANTHROPIC_API_KEY,
     CEREBRAS_API_KEY,
     CLAUDE_API_KEY,
+    CLOUDFLARE_ACCOUNT_ID,
+    CLOUDFLARE_API_TOKEN,
+    COHERE_API_KEY,
     GEMINI_API_KEY,
     GROQ_API_KEY,
+    HF_TOKEN,
+    MISTRAL_API_KEY,
+    NVIDIA_API_KEY,
     NOVA_API_KEY,
     OPENROUTER_API_KEY,
 )
@@ -40,6 +46,14 @@ NOVA_MODELS_URL = "https://api.nova.ai/v1/models"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 CEREBRAS_URL = "https://api.cerebras.ai/v1/chat/completions"
 CEREBRAS_MODELS_URL = "https://api.cerebras.ai/v1/models"
+HF_CHAT_URL = "https://router.huggingface.co/v1/chat/completions"
+HF_MODELS_URL = "https://huggingface.co/api/models"
+MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
+MISTRAL_MODELS_URL = "https://api.mistral.ai/v1/models"
+COHERE_URL = "https://api.cohere.com/v2/chat"
+COHERE_MODELS_URL = "https://api.cohere.com/v1/models"
+NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+NVIDIA_MODELS_URL = "https://integrate.api.nvidia.com/v1/models"
 
 # ── VISUAL SEARCH HINTS FOR FOOTAGE ──
 NICHE_SEARCH_HINTS = {
@@ -522,6 +536,57 @@ def _valid_visual_packaging(result: dict, niche_key: str) -> bool:
     )
 
 
+def _repair_nonfactual_hook_packaging(result: dict, niche_key: str) -> None:
+    """Repair presentation-only visual fields without altering story claims.
+
+    Smaller/free models sometimes return a strong script while omitting the
+    camera variants or two short overlay fields. StoryFuse and Stoic Reset can
+    safely derive presentation metadata from the accepted search query/title.
+    Tech true-crime packaging is intentionally excluded because its amount,
+    clue, and evidence label must remain tied to the supporting public record.
+    """
+    if niche_key not in {"storytelling", "educational"}:
+        return
+    title_words = re.findall(r"[A-Za-z0-9$]+", str(result.get("title", "")))
+    if len(title_words) < 4:
+        return
+
+    visual_queries = result.get("visual_queries")
+    if (
+        not isinstance(visual_queries, list)
+        or len(visual_queries) != 3
+        or any(
+            not isinstance(query, str) or len(query.split()) < 4
+            for query in visual_queries
+        )
+    ):
+        base = str(result.get("search_query", "")).strip()
+        if len(base.split()) < 3:
+            base = " ".join(title_words) + " cinematic scene"
+        result["visual_queries"] = [
+            f"{base} dramatic close up",
+            f"{base} tense action medium shot",
+            f"{base} resolved consequence cinematic wide shot",
+        ]
+
+    overlay = str(result.get("hook_overlay", "")).strip()
+    overlay_words = overlay.split()
+    if not 4 <= len(overlay_words) <= 8 or len(overlay) > 64:
+        overlay_words = title_words[:8]
+        while len(" ".join(overlay_words)) > 64 and len(overlay_words) > 4:
+            overlay_words.pop()
+        result["hook_overlay"] = " ".join(overlay_words).upper()
+
+    accent = str(result.get("hook_accent", "")).strip()
+    accent_words = accent.split()
+    if not 1 <= len(accent_words) <= 4 or len(accent) > 32:
+        accent_words = title_words[-3:]
+        while len(" ".join(accent_words)) > 32 and len(accent_words) > 1:
+            accent_words.pop(0)
+        candidate = " ".join(accent_words).upper()
+        result["hook_accent"] = candidate if len(candidate) <= 32 else "KEY CLUE"
+
+
 def _parse_json(raw: str) -> dict:
     """Parse plain, fenced, or reasoning-prefixed provider JSON safely."""
     raw = raw.strip().lstrip("\ufeff")
@@ -586,8 +651,10 @@ def _discover_openai_models(
             timeout=(8, 20),
         )
         response.raise_for_status()
+        payload = response.json()
+        items = payload if isinstance(payload, list) else payload.get("data", [])
         available = [
-            item.get("id", "") for item in response.json().get("data", [])
+            item.get("id", "") for item in items
             if isinstance(item, dict)
         ]
         models = _ordered_text_models(available, preferred)
@@ -707,6 +774,182 @@ def _try_cerebras(prompt: str) -> dict | None:
     return _try_openai_chat_provider(
         "Cerebras", CEREBRAS_URL, CEREBRAS_API_KEY, prompt, models
     )
+
+
+def _try_huggingface(prompt: str) -> dict | None:
+    """Use Hugging Face's multi-provider router with live warm-model search."""
+    if not HF_TOKEN:
+        return None
+    models: list[str] = []
+    try:
+        response = requests.get(
+            HF_MODELS_URL,
+            headers={"Authorization": f"Bearer {HF_TOKEN}"},
+            params={
+                "pipeline_tag": "text-generation",
+                "inference": "warm",
+                "sort": "trendingScore",
+                "limit": 12,
+            },
+            timeout=(8, 20),
+        )
+        response.raise_for_status()
+        ids = [
+            item.get("id", "") for item in response.json()
+            if isinstance(item, dict) and item.get("id")
+        ]
+        models = [f"{model}:fastest" for model in ids[:8]]
+        if models:
+            print(f"[ScriptGen] Hugging Face catalog: {len(models)} warm text models")
+    except Exception as error:
+        _log_provider_error("Hugging Face model discovery", error)
+    if not models:
+        # Router policy aliases choose the currently fastest backing provider.
+        models = [
+            "openai/gpt-oss-120b:fastest",
+            "Qwen/Qwen3-4B-Thinking-2507:fastest",
+        ]
+    return _try_openai_chat_provider(
+        "Hugging Face Router", HF_CHAT_URL, HF_TOKEN, prompt, models
+    )
+
+
+def _try_mistral(prompt: str) -> dict | None:
+    if not MISTRAL_API_KEY:
+        return None
+    models = _discover_openai_models(
+        "Mistral",
+        MISTRAL_MODELS_URL,
+        MISTRAL_API_KEY,
+        ("mistral-small-latest", "ministral-8b-latest"),
+    )
+    return _try_openai_chat_provider(
+        "Mistral", MISTRAL_URL, MISTRAL_API_KEY, prompt, models
+    )
+
+
+def _try_nvidia(prompt: str) -> dict | None:
+    if not NVIDIA_API_KEY:
+        return None
+    models = _discover_openai_models(
+        "NVIDIA NIM",
+        NVIDIA_MODELS_URL,
+        NVIDIA_API_KEY,
+        ("openai/gpt-oss-20b", "meta/llama-3.3-70b-instruct"),
+    )
+    return _try_openai_chat_provider(
+        "NVIDIA NIM", NVIDIA_URL, NVIDIA_API_KEY, prompt, models
+    )
+
+
+def _try_cloudflare(prompt: str) -> dict | None:
+    if not CLOUDFLARE_API_TOKEN or not CLOUDFLARE_ACCOUNT_ID:
+        return None
+    base = (
+        "https://api.cloudflare.com/client/v4/accounts/"
+        f"{CLOUDFLARE_ACCOUNT_ID}/ai"
+    )
+    try:
+        response = requests.get(
+            f"{base}/models/search",
+            headers={"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"},
+            params={
+                "task": "Text Generation",
+                "hide_experimental": "true",
+                "include_deprecated": "false",
+                "per_page": 50,
+            },
+            timeout=(8, 20),
+        )
+        response.raise_for_status()
+        items = response.json().get("result", [])
+        models = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            model = item.get("name") or item.get("id") or item.get("model") or ""
+            if model.startswith("@cf/"):
+                models.append(model)
+        models = models[:8]
+        if not models:
+            raise RuntimeError("Cloudflare returned no active text-generation models")
+        print(f"[ScriptGen] Cloudflare catalog: {len(models)} active text models")
+        return _try_openai_chat_provider(
+            "Cloudflare Workers AI",
+            f"{base}/v1/chat/completions",
+            CLOUDFLARE_API_TOKEN,
+            prompt,
+            models,
+        )
+    except Exception as error:
+        _log_provider_error("Cloudflare Workers AI", error)
+        return None
+
+
+def _try_cohere(prompt: str) -> dict | None:
+    """Use Cohere's native v2 JSON chat API and live nondeprecated catalog."""
+    if not COHERE_API_KEY:
+        return None
+    headers = {
+        "Authorization": f"Bearer {COHERE_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    try:
+        catalog = requests.get(
+            COHERE_MODELS_URL,
+            headers=headers,
+            params={"endpoint": "chat", "page_size": 1000},
+            timeout=(8, 20),
+        )
+        catalog.raise_for_status()
+        models = [
+            item.get("name", "") for item in catalog.json().get("models", [])
+            if isinstance(item, dict)
+            and not item.get("is_deprecated", False)
+            and "chat" in item.get("endpoints", [])
+        ]
+        models = _ordered_text_models(
+            models, ("command-a-plus-05-2026", "command-a-03-2025")
+        )
+        print(f"[ScriptGen] Cohere catalog: {len(models)} active chat models")
+        for model in models:
+            for json_mode in (True, False):
+                payload = {
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.7,
+                    "max_tokens": 500,
+                }
+                if json_mode:
+                    payload["response_format"] = {"type": "json_object"}
+                response = requests.post(
+                    COHERE_URL,
+                    headers=headers,
+                    json=payload,
+                    timeout=(8, 25),
+                )
+                if response.status_code == 429:
+                    print("[ScriptGen] Cohere rate-limited -> next provider")
+                    return None
+                if response.status_code in (400, 404, 422):
+                    if json_mode:
+                        continue
+                    break
+                if response.status_code in (401, 403, 498):
+                    response.raise_for_status()
+                response.raise_for_status()
+                blocks = response.json()["message"]["content"]
+                text = next(
+                    block["text"] for block in blocks
+                    if isinstance(block, dict) and block.get("type") == "text"
+                )
+                result = _parse_json(text)
+                print(f"[ScriptGen] Script via Cohere ({model})")
+                return result
+        return None
+    except Exception as error:
+        _log_provider_error("Cohere", error)
+        return None
 
 
 def _try_gemini(prompt: str) -> dict | None:
@@ -940,8 +1183,13 @@ def generate_script(
     prompt = _build_prompt(niche, uniqueness_seed)
     providers = [
         (_try_groq, "Groq"),
+        (_try_huggingface, "Hugging Face Router"),
+        (_try_mistral, "Mistral"),
+        (_try_nvidia, "NVIDIA NIM"),
+        (_try_cloudflare, "Cloudflare Workers AI"),
         (_try_openrouter, "OpenRouter Free"),
         (_try_cerebras, "Cerebras"),
+        (_try_cohere, "Cohere"),
         (_try_gemini, "Gemini"),
         (_try_nova, "Nova"),
         (_try_claude, "Claude"),
@@ -965,6 +1213,7 @@ def generate_script(
         if niche_key != "kids_history" and _reject_generic_title(result["title"], niche_key):
             print(f"[ScriptGen] {name}: generic or weak title rejected -> next provider")
             continue
+        _repair_nonfactual_hook_packaging(result, niche_key)
         if not _valid_visual_packaging(result, niche_key):
             print(f"[ScriptGen] {name}: incomplete visual timing pack rejected -> next provider")
             continue
