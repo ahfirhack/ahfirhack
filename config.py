@@ -20,6 +20,8 @@ GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY", "")
 CLAUDE_API_KEY     = os.getenv("CLAUDE_API_KEY", "")
 ANTHROPIC_API_KEY  = os.getenv("ANTHROPIC_API_KEY", CLAUDE_API_KEY)
 GROQ_API_KEY       = os.getenv("GROQ_API_KEY", "")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+CEREBRAS_API_KEY   = os.getenv("CEREBRAS_API_KEY", "")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 DEEPGRAM_API_KEY   = os.getenv("DEEPGRAM_API_KEY", "")
 
@@ -42,6 +44,7 @@ FREESOUND_API_KEY     = os.getenv("FREESOUND_API_KEY", "")
 USED_VIDEOS_FILE   = "used_videos.json"
 USED_SCRIPTS_FILE  = "used_scripts.json"
 USED_PROMPTS_FILE  = "used_prompts.json"
+PROMPT_RESERVE_DB  = os.getenv("PROMPT_RESERVE_DB", "prompt_reserve.sqlite3")
 MUSIC_CACHE_DIR    = "music_cache"
 META_AI_JOBS_DIR = os.getenv("META_AI_JOBS_DIR", "meta_ai_jobs")
 META_AI_CREATE_URL = os.getenv("META_AI_CREATE_URL", "https://meta.ai/create")
@@ -50,7 +53,7 @@ META_AI_STORAGE_STATE_FILE = os.getenv("META_AI_STORAGE_STATE_FILE", "")
 META_AI_BROWSER_CHANNEL = os.getenv("META_AI_BROWSER_CHANNEL", "chromium")
 META_AI_HEADLESS = os.getenv("META_AI_HEADLESS", "false").lower() in {"1", "true", "yes"}
 META_AI_TIMEOUT_SECONDS = int(os.getenv("META_AI_TIMEOUT_SECONDS", "900"))
-META_AI_MAX_RETRIES = int(os.getenv("META_AI_MAX_RETRIES", "2"))
+META_AI_MAX_RETRIES = int(os.getenv("META_AI_MAX_RETRIES", "4"))
 META_SCENE_COUNT = 3
 META_SCENE_DURATION = 10
 
@@ -160,6 +163,7 @@ CHANNELS = [
         "strict_ai_prompts": True,
         "track_prompt_history": True,
         "strict_upload_dedup": True,
+        "prompt_reserve_db": PROMPT_RESERVE_DB,
     },
     {
         "id": "channel_4",

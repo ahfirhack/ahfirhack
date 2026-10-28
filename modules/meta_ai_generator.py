@@ -80,6 +80,10 @@ class MetaAIVideoUnavailable(MetaAIAutomationError):
     """The signed-in Meta account is not eligible for video generation."""
 
 
+class MetaAITransientError(MetaAIAutomationError):
+    """Meta reported a temporary service failure that should be retried."""
+
+
 def _slug(value: str) -> str:
     clean = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return clean[:48] or "episode"
@@ -505,6 +509,18 @@ def _wait_for_media(page, media_kind: str, baseline: set[str]) -> str:
                     f"Meta AI reports that {media_kind} generation is not "
                     "available for the signed-in account."
                 )
+            transient = page.get_by_text(
+                re.compile(
+                    r"temporarily unavailable|temporary service|"
+                    r"try again in a little while|try again later|"
+                    r"something went wrong",
+                    re.I,
+                )
+            )
+            if _visible_last(transient) is not None:
+                raise MetaAITransientError(
+                    "Meta AI reported a temporary generation service failure."
+                )
             failure = page.get_by_text(
                 re.compile(r"couldn't generate|unable to generate|try again|generation failed", re.I)
             )
@@ -686,6 +702,14 @@ def ensure_rendered_clips(manifest: dict, job_dir: Path) -> list[str]:
                         raise
                     except MetaAIVideoUnavailable:
                         raise
+                    except MetaAITransientError as error:
+                        last_error = error
+                        delay = min(attempt * 60, 180)
+                        print(
+                            f"[MetaAI] Scene {scene['index']} hit a temporary "
+                            f"Meta service failure; retrying in {delay}s"
+                        )
+                        time.sleep(delay)
                     except Exception as error:
                         last_error = error
                         print(f"[MetaAI] Scene {scene['index']} failed: {type(error).__name__}")

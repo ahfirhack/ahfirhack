@@ -67,6 +67,8 @@ Go to: **Repo → Settings → Secrets and variables → Actions → New reposit
 | `CHANNEL2_TOKEN_B64` | base64 of `credentials/channel2_token.json` (The History Mystery) |
 | `CHANNEL3_TOKEN_B64` | base64 of `credentials/channel3_token.json` (Epic History Kids) |
 | `CHANNEL4_TOKEN_B64` | base64 of `credentials/channel4_token.json` (The Modern Stoic) |
+| `OPENROUTER_API_KEY` | optional free-tier prompt-provider key |
+| `CEREBRAS_API_KEY` | optional free-tier prompt-provider key |
 
 ---
 
@@ -85,15 +87,16 @@ You can also trigger it manually: **Actions → daily_upload → Run workflow**
 
 - 4 channels × 2 videos = **8 Shorts per day**
 - ~240 Shorts per month — fully automated
-- Dedup tracked in `used_scripts.json`, compact `used_prompts.json`, and
-  `used_videos.json` (committed back after each run)
+- Dedup is tracked in `used_scripts.json`, compact `used_prompts.json`, and
+  `used_videos.json`. The transactional fallback lives in the approximately
+  2 MB `prompt_reserve.sqlite3` database. All state is committed after each run.
 
 ---
 
 ## How It Works
 
 ```
-Script (Groq / Nova / Gemini / Claude / Bedrock)
+Script (Groq / Gemini / OpenRouter Free / Cerebras / Nova / Claude / Bedrock)
     ↓
 Channel 3: Meta AI Create in persistent Chrome → 3 × 10-second scenes
 Other channels: stock clips until their individual optimization pass
@@ -120,12 +123,21 @@ exact final frame of the preceding video. The assembler preserves the native
 Meta audio, normalizes the three clips to ten seconds each, and joins their
 audio and video timestamps without black, silent, or empty gap frames.
 
-Channel 3 tries every configured script provider until one returns a valid,
-unused story. Canned fallback stories are disabled. Compact hashes of the
-title, script, and complete prompt are stored in `used_prompts.json`; an exact
-title check against the authenticated YouTube channel runs before every upload.
-If no provider produces a unique script, the run fails without generating or
-uploading a duplicate.
+Channel 3 queries provider model catalogs at runtime and tries active models
+across every configured provider until one returns a valid, unused story.
+OpenRouter uses its maintained `openrouter/free` router instead of a fixed
+model ID. If all configured AI services fail, Channel 3 reserves one of 2,560
+ready, unique historical stories from `prompt_reserve.sqlite3`. That row stays
+reserved during Meta rendering and assembly and is permanently deleted only
+after YouTube returns a successful upload ID. Failed runs keep their unfinished
+job and reservation for automatic resumption. The database is never silently
+reseeded after prompts are consumed.
+
+Small hard-coded fallback lists remain disabled for Channel 3. Compact hashes
+of the title, script, and complete prompt are stored in `used_prompts.json`;
+an exact title check against the authenticated YouTube channel runs before
+every upload. If both the providers and the reserve are exhausted, the run
+fails without generating or uploading a duplicate.
 
 GitHub-hosted machines are fresh for every job, so the Meta login is restored
 from an encrypted GitHub Actions secret. Complete one local interactive login,
@@ -141,8 +153,9 @@ gzip -c "$META_AI_STORAGE_STATE_FILE" | base64 -w 0 | gh secret set META_AI_STOR
 ```
 
 The workflow restores that session into Chromium through Xvfb, generates all
-three videos from the permanent prompt, assembles the Short, and uploads it. If
-Meta expires or challenges the session, the workflow stops before upload;
+three videos from the permanent prompt, assembles the Short, and uploads it.
+Temporary Meta service errors are retried four times with increasing delays.
+If Meta expires or challenges the session, the workflow stops before upload;
 repeat the login/export command to refresh the secret.
 
 The signed-in Meta account must be eligible for Vibes video generation, be 18
@@ -182,5 +195,6 @@ upload a seven-day diagnostic artifact.
 | **Token expired** | Re-run `python auth_tokens.py`, re-run `python encode_secrets.py`, update GitHub secret |
 | **YouTube quota exceeded** | YouTube allows ~6 uploads/day per project. Apply for higher quota at console.cloud.google.com |
 | **No video clips found** | Broaden the channel's `keywords` list in `config.py` |
-| **Channel 3 script generation failed** | Every configured provider failed, returned the wrong length, or repeated an existing prompt. Check the provider secrets; Channel 3 intentionally has no canned fallback. |
+| **Channel 3 script generation failed** | Every configured provider failed or repeated a prompt, and the SQLite reserve is exhausted. Check provider secrets and the available row count in `prompt_reserve.sqlite3`. |
+| **Meta safety service temporarily unavailable** | No account change is needed. The runner automatically retries four times and preserves the unfinished job for the next run. |
 | **Font missing on runner** | The GitHub Action installs `fonts-open-sans` and `fonts-dejavu-core` automatically |

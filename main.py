@@ -36,6 +36,11 @@ from modules.meta_ai_generator import (
     find_active_job,
     mark_job_complete,
 )
+from modules.prompt_reserve import (
+    available_prompt_count,
+    consume_prompt,
+    reserve_prompt,
+)
 
 CLIP_COUNT = 6
 
@@ -204,9 +209,28 @@ def _generate_unique_script(
             _save_used_prompts(used_prompts)
         return data
 
+    reserve_db = channel.get("prompt_reserve_db")
+    if reserve_db:
+        reservation_id = (
+            f"{channel['id']}:{datetime.datetime.now().isoformat()}:{os.getpid()}"
+        )
+        while True:
+            data = reserve_prompt(reserve_db, reservation_id)
+            if data is None:
+                break
+            if not is_duplicate(data):
+                print(
+                    f"[ScriptGen] All AI providers exhausted -> SQLite reserve "
+                    f"prompt {data['_reserve_prompt_id']}"
+                )
+                return data
+            # A reseeded/restored database may contain an older used prompt.
+            # Delete it permanently and continue to the next unused row.
+            consume_prompt(reserve_db, data["_reserve_prompt_id"])
+
     raise ScriptGenerationError(
-        "All configured AI providers were exhausted without a new unique prompt; "
-        "no fallback or duplicate will be published."
+        "All configured AI providers and the SQLite prompt reserve were "
+        "exhausted without a new unique prompt; no duplicate will be published."
     ) from last_error
 
 
@@ -337,6 +361,21 @@ def process_video(
 
     if meta_job_dir is not None:
         mark_job_complete(meta_job_dir, video_id)
+
+    reserve_prompt_id = data.get("_reserve_prompt_id")
+    reserve_db = channel.get("prompt_reserve_db")
+    if reserve_prompt_id is not None and reserve_db:
+        # The row remains reserved through generation and assembly. It is
+        # deleted only after upload_video returned a confirmed YouTube ID.
+        consume_prompt(reserve_db, int(reserve_prompt_id))
+        used_scripts.add(_script_hash(data))
+        _save_used_scripts(used_scripts)
+        used_prompts.update(_prompt_hashes(channel["id"], data))
+        _save_used_prompts(used_prompts)
+        print(
+            f"[ScriptGen] Consumed SQLite prompt {reserve_prompt_id}; "
+            f"{available_prompt_count(reserve_db)} prompts remain"
+        )
 
     print(f"\n  {channel_name} → https://youtube.com/shorts/{video_id}\n")
     return video_id

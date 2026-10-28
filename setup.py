@@ -162,7 +162,8 @@ def push_secret(name: str, value: str, key_id: str, public_key: str):
 def read_api_keys_from_environment() -> dict:
     """Read provider credentials from the process environment, never source files."""
     wanted = [
-        "GROQ_API_KEY", "GEMINI_API_KEY", "CLAUDE_API_KEY",
+        "GROQ_API_KEY", "OPENROUTER_API_KEY", "CEREBRAS_API_KEY",
+        "GEMINI_API_KEY", "CLAUDE_API_KEY",
         "ANTHROPIC_API_KEY", "PEXELS_API_KEY", "PIXABAY_API_KEY",
         "JAMENDO_CLIENT_ID", "FREESOUND_API_KEY",
         "YOUTUBE_API_KEY", "NOVA_API_KEY", "ELEVENLABS_API_KEY",

@@ -2,7 +2,7 @@
 script_generator.py (v9 — Conversational Voice-Optimized Scripts)
 Key changes:
 - Scripts written for VOICE (conversational, easy to listen to)
-- Uses Groq, Nova, Gemini, or Claude for generation
+- Discovers active models across seven prompt providers at runtime
 - Shorter scripts (80-100 words = ~35s) for higher completion rate
 - Searchable titles ("How to...", "Why...") for Shorts search filter
 - Loop-friendly endings that reference the hook
@@ -16,18 +16,30 @@ import re
 import time
 import boto3
 from botocore.exceptions import ClientError
-from config import GEMINI_API_KEY, GROQ_API_KEY, CLAUDE_API_KEY, NOVA_API_KEY, AMAZON_ACCESS_KEY, AMAZON_SECRET_KEY, AMAZON_REGION
+from config import (
+    AMAZON_ACCESS_KEY,
+    AMAZON_REGION,
+    AMAZON_SECRET_KEY,
+    ANTHROPIC_API_KEY,
+    CEREBRAS_API_KEY,
+    CLAUDE_API_KEY,
+    GEMINI_API_KEY,
+    GROQ_API_KEY,
+    NOVA_API_KEY,
+    OPENROUTER_API_KEY,
+)
 
 GROQ_URL   = "https://api.groq.com/openai/v1/chat/completions"
-GEMINI_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    "gemini-3.8-flash:generateContent"
-)
+GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models"
+GEMINI_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+GEMINI_GENERATE_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 CLAUDE_URL = "https://api.anthropic.com/v1/messages"
+CLAUDE_MODELS_URL = "https://api.anthropic.com/v1/models"
 NOVA_URL   = "https://api.nova.ai/v1/chat/completions"
-GROQ_HEADERS   = {"Authorization": f"Bearer {GROQ_API_KEY}",   "Content-Type": "application/json"}
-CLAUDE_HEADERS = {"x-api-key": CLAUDE_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"}
-NOVA_HEADERS   = {"Authorization": f"Bearer {NOVA_API_KEY}",   "Content-Type": "application/json"}
+NOVA_MODELS_URL = "https://api.nova.ai/v1/models"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+CEREBRAS_URL = "https://api.cerebras.ai/v1/chat/completions"
+CEREBRAS_MODELS_URL = "https://api.cerebras.ai/v1/models"
 
 # ── VISUAL SEARCH HINTS FOR FOOTAGE ──
 NICHE_SEARCH_HINTS = {
@@ -241,132 +253,269 @@ def _log_provider_error(provider: str, error: Exception) -> None:
     print(f"[ScriptGen] {provider} failed ({detail})")
 
 
+def _ordered_text_models(
+    available: list[str],
+    preferred: tuple[str, ...] = (),
+) -> list[str]:
+    """Prefer known efficient models, then use any active text-chat model."""
+    excluded = (
+        "audio", "embed", "guard", "image", "live", "moderation",
+        "rerank", "speech", "transcribe", "tts", "veo", "whisper",
+    )
+    usable = [
+        model for model in available
+        if model and not any(term in model.lower() for term in excluded)
+    ]
+    ordered = [model for model in preferred if model in usable]
+    ordered.extend(sorted((model for model in usable if model not in ordered), reverse=True))
+    return ordered
+
+
+def _discover_openai_models(
+    provider: str,
+    catalog_url: str,
+    api_key: str,
+    preferred: tuple[str, ...],
+) -> list[str]:
+    """Query an OpenAI-compatible provider catalog once per workflow run."""
+    try:
+        response = requests.get(
+            catalog_url,
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=(8, 20),
+        )
+        response.raise_for_status()
+        available = [
+            item.get("id", "") for item in response.json().get("data", [])
+            if isinstance(item, dict)
+        ]
+        models = _ordered_text_models(available, preferred)
+        if models:
+            print(f"[ScriptGen] {provider} catalog: {len(models)} active text models")
+            return models
+    except Exception as error:
+        _log_provider_error(f"{provider} model discovery", error)
+    # These are only a last-known bootstrap. A successful catalog response
+    # always replaces them, so retired models are not pinned forever.
+    return list(preferred)
+
+
+def _try_openai_chat_provider(
+    provider: str,
+    url: str,
+    api_key: str,
+    prompt: str,
+    models: list[str],
+) -> dict | None:
+    """Try every active model, with JSON mode and a plain-output retry."""
+    last_error: Exception | None = None
+    for model in models:
+        for json_mode in (True, False):
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.9,
+                "max_tokens": 500,
+            }
+            if json_mode:
+                payload["response_format"] = {"type": "json_object"}
+            try:
+                response = requests.post(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                    timeout=(8, 25),
+                )
+                if response.status_code == 429:
+                    print(f"[ScriptGen] {provider} rate-limited -> next provider")
+                    return None
+                if response.status_code in (401, 403):
+                    response.raise_for_status()
+                if response.status_code in (400, 404, 422):
+                    if json_mode:
+                        continue
+                    break
+                response.raise_for_status()
+                content = response.json()["choices"][0]["message"]["content"]
+                result = _parse_json(content)
+                print(f"[ScriptGen] Script via {provider} ({model})")
+                return result
+            except Exception as error:
+                last_error = error
+                status_code = getattr(getattr(error, "response", None), "status_code", None)
+                if status_code in (401, 403):
+                    _log_provider_error(provider, error)
+                    return None
+                if json_mode:
+                    continue
+                break
+    if last_error is not None:
+        _log_provider_error(provider, last_error)
+    return None
+
+
 def _try_nova(prompt: str) -> dict | None:
     if not NOVA_API_KEY:
         return None
-    try:
-        resp = requests.post(NOVA_URL,
-            headers={"Authorization": f"Bearer {NOVA_API_KEY}", "Content-Type": "application/json"},
-            json={"model": "nova-lite-v1",
-                  "messages": [{"role": "user", "content": prompt}],
-                  "temperature": 0.9, "max_tokens": 500},
-            timeout=(8, 20))
-        if resp.status_code == 429:
-            print("[ScriptGen] Nova rate-limited -> next")
-            return None
-        resp.raise_for_status()
-        data = _parse_json(resp.json()["choices"][0]["message"]["content"])
-        print("[ScriptGen] Script via Nova")
-        return data
-    except Exception as e:
-        _log_provider_error("Nova", e)
-        return None
+    models = _discover_openai_models(
+        "Nova", NOVA_MODELS_URL, NOVA_API_KEY, ("nova-lite-v1",)
+    )
+    return _try_openai_chat_provider(
+        "Nova", NOVA_URL, NOVA_API_KEY, prompt, models
+    )
 
 
 def _try_groq(prompt: str) -> dict | None:
     if not GROQ_API_KEY:
         return None
-    try:
-        strict_schema = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "youtube_short_script",
-                "strict": True,
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "title": {"type": "string"},
-                        "script": {"type": "string"},
-                        "tags": {"type": "array", "items": {"type": "string"}},
-                        "search_query": {"type": "string"},
-                    },
-                    "required": ["title", "script", "tags", "search_query"],
-                    "additionalProperties": False,
-                },
-            },
-        }
-        for response_format in (strict_schema, {"type": "json_object"}):
-            resp = requests.post(
-                GROQ_URL,
-                headers={
-                    "Authorization": f"Bearer {GROQ_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": "openai/gpt-oss-20b",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.9,
-                    "max_tokens": 500,
-                    "reasoning_effort": "low",
-                    "reasoning_format": "hidden",
-                    "response_format": response_format,
-                },
-                timeout=(8, 20),
-            )
-            if resp.status_code == 429:
-                print("[ScriptGen] Groq rate-limited -> next")
-                return None
-            if resp.status_code == 400 and response_format is strict_schema:
-                print("[ScriptGen] Groq strict schema retrying in JSON mode")
-                continue
-            resp.raise_for_status()
-            data = _parse_json(resp.json()["choices"][0]["message"]["content"])
-            print("[ScriptGen] Script via Groq")
-            return data
+    models = _discover_openai_models(
+        "Groq",
+        GROQ_MODELS_URL,
+        GROQ_API_KEY,
+        ("openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.8-27b"),
+    )
+    return _try_openai_chat_provider(
+        "Groq", GROQ_URL, GROQ_API_KEY, prompt, models
+    )
+
+
+def _try_openrouter(prompt: str) -> dict | None:
+    if not OPENROUTER_API_KEY:
         return None
-    except Exception as e:
-        _log_provider_error("Groq", e)
+    return _try_openai_chat_provider(
+        "OpenRouter Free",
+        OPENROUTER_URL,
+        OPENROUTER_API_KEY,
+        prompt,
+        ["openrouter/free"],
+    )
+
+
+def _try_cerebras(prompt: str) -> dict | None:
+    if not CEREBRAS_API_KEY:
         return None
+    models = _discover_openai_models(
+        "Cerebras",
+        CEREBRAS_MODELS_URL,
+        CEREBRAS_API_KEY,
+        ("zai-glm-4.7", "gpt-oss-120b", "llama3.1-8b"),
+    )
+    return _try_openai_chat_provider(
+        "Cerebras", CEREBRAS_URL, CEREBRAS_API_KEY, prompt, models
+    )
 
 
 def _try_gemini(prompt: str) -> dict | None:
     if not GEMINI_API_KEY:
         return None
     try:
-        resp = requests.post(GEMINI_URL,
-            params={"key": GEMINI_API_KEY},
-            json={"contents": [{"parts": [{"text": prompt}]}],
-                  "generationConfig": {
-                      "temperature": 0.9,
-                      "maxOutputTokens": 500,
-                      "responseMimeType": "application/json",
-                  }},
-            timeout=(8, 25))
-        if resp.status_code == 429:
-            print("[ScriptGen] Gemini rate-limited -> next")
-            return None
-        resp.raise_for_status()
-        data = _parse_json(resp.json()["candidates"][0]["content"]["parts"][0]["text"])
-        print("[ScriptGen] Script via Gemini")
-        return data
+        catalog = requests.get(
+            GEMINI_MODELS_URL,
+            params={"key": GEMINI_API_KEY, "pageSize": 1000},
+            timeout=(8, 20),
+        )
+        catalog.raise_for_status()
+        available = []
+        for model in catalog.json().get("models", []):
+            methods = model.get("supportedGenerationMethods", [])
+            if "generateContent" not in methods:
+                continue
+            name = model.get("name", "").removeprefix("models/")
+            available.append(name)
+        models = _ordered_text_models(
+            available,
+            ("gemini-flash-latest", "gemini-3.8-flash", "gemini-3.7-flash"),
+        )
+        print(f"[ScriptGen] Gemini catalog: {len(models)} active text models")
+        for model in models:
+            for json_mode in (True, False):
+                generation_config = {
+                    "temperature": 0.9,
+                    "maxOutputTokens": 500,
+                }
+                if json_mode:
+                    generation_config["responseMimeType"] = "application/json"
+                response = requests.post(
+                    GEMINI_GENERATE_URL.format(model=model),
+                    params={"key": GEMINI_API_KEY},
+                    json={
+                        "contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": generation_config,
+                    },
+                    timeout=(8, 25),
+                )
+                if response.status_code == 429:
+                    print("[ScriptGen] Gemini rate-limited -> next provider")
+                    return None
+                if response.status_code in (400, 404) and json_mode:
+                    continue
+                if response.status_code in (400, 404):
+                    break
+                response.raise_for_status()
+                text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+                data = _parse_json(text)
+                print(f"[ScriptGen] Script via Gemini ({model})")
+                return data
+        return None
     except Exception as e:
         _log_provider_error("Gemini", e)
         return None
 
 
 def _try_claude(prompt: str) -> dict | None:
-    if not CLAUDE_API_KEY:
+    api_key = CLAUDE_API_KEY or ANTHROPIC_API_KEY
+    if not api_key:
         return None
     try:
-        resp = requests.post(CLAUDE_URL,
-            headers={"x-api-key": CLAUDE_API_KEY, "anthropic-version": "2023-06-01",
-                     "Content-Type": "application/json"},
-            json={"model": "claude-sonnet-4-6", "max_tokens": 500,
-                  "messages": [{"role": "user", "content": prompt}]},
-            timeout=(8, 25))
-        if resp.status_code in (429, 401, 403):
-            return None
-        resp.raise_for_status()
-        data = _parse_json(resp.json()["content"][0]["text"])
-        print("[ScriptGen] Script via Claude")
-        return data
+        headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+        catalog = requests.get(
+            CLAUDE_MODELS_URL,
+            headers=headers,
+            params={"limit": 1000},
+            timeout=(8, 20),
+        )
+        catalog.raise_for_status()
+        available = [item.get("id", "") for item in catalog.json().get("data", [])]
+        models = _ordered_text_models(
+            available,
+            ("claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-sonnet-5"),
+        )
+        print(f"[ScriptGen] Claude catalog: {len(models)} active text models")
+        for model in models:
+            response = requests.post(
+                CLAUDE_URL,
+                headers=headers,
+                json={
+                    "model": model,
+                    "max_tokens": 500,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+                timeout=(8, 25),
+            )
+            if response.status_code == 429:
+                print("[ScriptGen] Claude rate-limited -> next provider")
+                return None
+            if response.status_code in (400, 404):
+                continue
+            response.raise_for_status()
+            data = _parse_json(response.json()["content"][0]["text"])
+            print(f"[ScriptGen] Script via Claude ({model})")
+            return data
+        return None
     except Exception as e:
         _log_provider_error("Claude", e)
         return None
 
 
 def _try_amazon(prompt: str) -> dict | None:
-    """Generate script using Amazon Bedrock (Claude or other models)."""
+    """Discover and try active Anthropic text models on Amazon Bedrock."""
     if not AMAZON_ACCESS_KEY or not AMAZON_SECRET_KEY:
         return None
     try:
@@ -382,24 +531,52 @@ def _try_amazon(prompt: str) -> dict | None:
             access_key = decoded
             secret_key = AMAZON_ACCESS_KEY
 
-        client = boto3.client(
-            service_name="bedrock-runtime",
+        client_kwargs = dict(
             region_name=AMAZON_REGION,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
         )
-        response = client.invoke_model(
-            modelId="us.anthropic.claude-haiku-4-5-20251001-v1:0",
-            body=json.dumps({
-                "max_tokens": 500,
-                "messages": [{"role": "user", "content": prompt}],
-                "anthropic_version": "bedrock-2023-05-31",
-            }),
+        catalog_client = boto3.client(
+            service_name="bedrock",
+            **client_kwargs,
         )
-        result = json.loads(response["body"].read())
-        data = _parse_json(result["content"][0]["text"])
-        print("[ScriptGen] Script via Amazon Bedrock")
-        return data
+        summaries = catalog_client.list_foundation_models(
+            byProvider="Anthropic",
+            byOutputModality="TEXT",
+            byInferenceType="ON_DEMAND",
+        ).get("modelSummaries", [])
+        available = [
+            summary.get("modelId", "") for summary in summaries
+            if summary.get("modelLifecycle", {}).get("status", "ACTIVE") == "ACTIVE"
+        ]
+        models = _ordered_text_models(available)
+        print(f"[ScriptGen] Amazon Bedrock catalog: {len(models)} active Claude models")
+
+        client = boto3.client(
+            service_name="bedrock-runtime",
+            **client_kwargs,
+        )
+        for model in models:
+            candidates = [model]
+            if model.startswith("anthropic."):
+                candidates.append(f"us.{model}")
+            for candidate in candidates:
+                try:
+                    response = client.invoke_model(
+                        modelId=candidate,
+                        body=json.dumps({
+                            "max_tokens": 500,
+                            "messages": [{"role": "user", "content": prompt}],
+                            "anthropic_version": "bedrock-2023-05-31",
+                        }),
+                    )
+                    result = json.loads(response["body"].read())
+                    data = _parse_json(result["content"][0]["text"])
+                    print(f"[ScriptGen] Script via Amazon Bedrock ({candidate})")
+                    return data
+                except ClientError:
+                    continue
+        return None
     except ClientError as e:
         _log_provider_error("Amazon Bedrock", e)
         return None
@@ -460,7 +637,15 @@ def generate_script(
     uniqueness_seed: str = "",
 ) -> dict:
     prompt = _build_prompt(niche, uniqueness_seed)
-    providers = [(_try_groq, "Groq"), (_try_nova, "Nova"), (_try_gemini, "Gemini"), (_try_claude, "Claude"), (_try_amazon, "Amazon")]
+    providers = [
+        (_try_groq, "Groq"),
+        (_try_openrouter, "OpenRouter Free"),
+        (_try_cerebras, "Cerebras"),
+        (_try_gemini, "Gemini"),
+        (_try_nova, "Nova"),
+        (_try_claude, "Claude"),
+        (_try_amazon, "Amazon Bedrock"),
+    ]
     niche_key = _detect_niche_key(niche)
     min_words, max_words = (48, 70) if niche_key == "kids_history" else (MIN_WORDS, MAX_WORDS)
 
