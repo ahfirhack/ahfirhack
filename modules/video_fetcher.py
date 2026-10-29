@@ -93,6 +93,18 @@ def _archive_query(query: str) -> str:
     return " ".join(_query_keywords(query, 6)) or query
 
 
+def _compact_api_query(query: str, maximum: int = 100) -> str:
+    """Return a stock-library query that stays within provider limits."""
+    compact = _archive_query(query).strip()
+    if len(compact) <= maximum:
+        return compact
+
+    # Keep complete words where possible. A single unusually long token still
+    # gets clipped so callers can rely on the hard character limit.
+    shortened = compact[:maximum].rsplit(" ", 1)[0].strip()
+    return shortened or compact[:maximum]
+
+
 def _search_variants(query: str, beat_index: int = 0) -> list[str]:
     """Reduce cinematic prompts to concepts that media libraries can match."""
     keywords = _query_keywords(query, 16)
@@ -352,7 +364,10 @@ def _fetch_pixabay(query: str, num: int, used: set) -> list:
             "https://pixabay.com/api/videos/",
             params={
                 "key": PIXABAY_API_KEY,
-                "q": query,
+                # Pixabay rejects search terms longer than 100 characters.
+                # Visual prompts are prose, so reduce them to useful keywords
+                # instead of sending camera and lighting directions verbatim.
+                "q": _compact_api_query(query),
                 "per_page": 15,
                 "video_type": "film",
                 "safesearch": "true",
@@ -408,28 +423,37 @@ def _fetch_coverr(query: str, num: int, used: set) -> list:
     results = []
     try:
         resp = requests.get(
-            "https://coverr.co/api/videos",
+            "https://api.coverr.co/videos",
             headers={"Authorization": f"Bearer {COVERR_API_KEY}"},
-            params={"search": query, "per_page": 15, "page": 1},
+            params={
+                "query": _compact_api_query(query),
+                "page_size": 15,
+                "page": 0,
+                "urls": "true",
+            },
             timeout=20,
         )
         resp.raise_for_status()
-        data   = resp.json()
-        videos = data.get("page", {}).get("videos", data.get("results", []))
+        data = resp.json()
+        videos = data.get("hits", []) if isinstance(data, dict) else []
     except Exception as e:
         print(f"[Fetcher/Coverr] API error: {e}")
         return []
 
     for v in videos:
+        if not isinstance(v, dict):
+            continue
         vid = f"coverr_{v.get('id', hashlib.md5(str(v).encode()).hexdigest()[:8])}"
         if vid in used:
             continue
 
         url = None
-        for key in ["hd", "sd", "mobile", "url", "video_url"]:
-            url = v.get("urls", {}).get(key) or v.get(key)
+        urls = v.get("urls") if isinstance(v.get("urls"), dict) else {}
+        for key in ["mp4", "mp4_preview", "hd", "sd", "mobile"]:
+            url = urls.get(key)
             if url:
                 break
+        url = url or v.get("url") or v.get("video_url")
         if not url:
             continue
 
