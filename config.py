@@ -23,6 +23,18 @@ GROQ_API_KEY       = os.getenv("GROQ_API_KEY", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 CEREBRAS_API_KEY   = os.getenv("CEREBRAS_API_KEY", "")
 HF_TOKEN           = os.getenv("HF_TOKEN", "")
+AI_HORDE_API_KEY   = os.getenv("AI_HORDE_API_KEY", "").strip() or "0000000000"
+AI_HORDE_ENABLED   = os.getenv("AI_HORDE_ENABLED", "true").lower() in {
+    "1", "true", "yes",
+}
+AI_HORDE_TEXT_MODEL = os.getenv("AI_HORDE_TEXT_MODEL", "").strip()
+AI_HORDE_IMAGE_MODEL = os.getenv("AI_HORDE_IMAGE_MODEL", "").strip()
+AI_HORDE_TEXT_TIMEOUT_SECONDS = int(
+    os.getenv("AI_HORDE_TEXT_TIMEOUT_SECONDS", "120")
+)
+AI_HORDE_IMAGE_TIMEOUT_SECONDS = int(
+    os.getenv("AI_HORDE_IMAGE_TIMEOUT_SECONDS", "420")
+)
 MISTRAL_API_KEY    = os.getenv("MISTRAL_API_KEY", "")
 COHERE_API_KEY     = os.getenv("COHERE_API_KEY", "")
 NVIDIA_API_KEY     = os.getenv("NVIDIA_API_KEY", "")

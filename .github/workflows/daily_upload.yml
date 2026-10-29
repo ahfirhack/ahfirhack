@@ -109,6 +109,7 @@ jobs:
           OPENROUTER_API_KEY:    ${{ secrets.OPENROUTER_API_KEY }}
           CEREBRAS_API_KEY:      ${{ secrets.CEREBRAS_API_KEY }}
           HF_TOKEN:              ${{ secrets.HF_TOKEN }}
+          AI_HORDE_API_KEY:      ${{ secrets.AI_HORDE_API_KEY }}
           MISTRAL_API_KEY:       ${{ secrets.MISTRAL_API_KEY }}
           COHERE_API_KEY:        ${{ secrets.COHERE_API_KEY }}
           NVIDIA_API_KEY:        ${{ secrets.NVIDIA_API_KEY }}
@@ -136,6 +137,7 @@ jobs:
           META_AI_HEADLESS: "false"
           META_AI_TIMEOUT_SECONDS: ${{ inputs.meta_timeout_seconds || '900' }}
           META_AI_MAX_RETRIES: "4"
+          AI_HORDE_ENABLED: "true"
           SELECTED_CHANNEL: ${{ inputs.channel || 'all' }}
         run: |
           args=(--once)

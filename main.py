@@ -263,7 +263,7 @@ def process_video(
     safe_name = channel["id"].replace(" ", "_")
 
     print(f"\n{'='*60}")
-    audio_mode = "Meta native" if native_audio else ("TTS" if use_voice else "music")
+    audio_mode = "Generated scene audio" if native_audio else ("TTS" if use_voice else "music")
     print(f"  {channel_name} | Audio: {audio_mode} | Music: {use_music}")
     print(f"  Video {video_index + 1}/{VIDEOS_PER_CHANNEL_PER_DAY}")
     print(f"{'='*60}\n")
@@ -291,15 +291,16 @@ def process_video(
     print(f"      Title: {title}")
     print(f"      Words: {len(script.split())} | Query: {search_query}")
 
-    # Meta AI runs through the dedicated signed-in Playwright Chrome profile.
-    # No media-generation API key is stored or required.
+    # Meta AI runs through the dedicated signed-in Playwright Chrome profile;
+    # an unavailable/quota-limited session switches to the free motion fallback.
     clips = None
     if media_source == "meta_ai_browser":
         if meta_manifest is None:
             meta_manifest, meta_job_dir = create_job(channel, data)
             print(f"      Meta AI prompt batch: {meta_job_dir / 'meta_prompts.txt'}")
         clips = ensure_rendered_clips(meta_manifest, meta_job_dir)
-        print(f"      Meta AI renders ready: {len(clips)} seamless scenes")
+        backend = meta_manifest.get("render_backend", "meta_ai")
+        print(f"      {backend} renders ready: {len(clips)} seamless scenes")
 
     # 2. Voiceover (if enabled)
     voice_path = None
@@ -315,7 +316,7 @@ def process_video(
             require_timestamps=channel.get("require_word_timestamps", False),
         )
     elif native_audio:
-        print("[2/6] Voiceover skipped (using Meta AI native character voice)")
+        print("[2/6] Voiceover already embedded in generated scenes")
     else:
         print("[2/6] Voiceover skipped (music only)")
 
@@ -326,11 +327,11 @@ def process_video(
         music_path = os.path.join(TEMP_DIR, f"{safe_name}_{timestamp}_music.mp3")
         generate_background_music(music_mood, SHORT_DURATION_TARGET, music_path)
     else:
-        print("[3/6] Music skipped (using Meta AI native audio)")
+        print("[3/6] Music skipped (using generated scene audio)")
 
     # 4. Footage
     if media_source == "meta_ai_browser":
-        print(f"[4/6] Using {len(clips)} Meta AI scenes...")
+        print(f"[4/6] Using {len(clips)} generated scenes...")
     else:
         clip_count = 3 if channel.get("align_visual_beats", False) else CLIP_COUNT
         print(f"[4/6] Fetching {clip_count} topic-matched clips...")
@@ -348,7 +349,7 @@ def process_video(
     print("[5/6] Assembling...")
     fname      = f"{safe_name}_{timestamp}.mp4"
 
-    # Channel 3 keeps Meta's native audio; other channels use voice or music.
+    # Channel 3 keeps each generated scene's audio; other channels use voice/music.
     audio_for_video = None if native_audio else (voice_path if voice_path else music_path)
 
     video_path = assemble_video(

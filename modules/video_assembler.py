@@ -707,7 +707,7 @@ def _concat_seamless_scenes(
         if preserve_audio:
             if not _has_audio(path):
                 raise RuntimeError(
-                    f"Meta AI scene has no native audio stream: {path}"
+                    f"Generated scene has no embedded audio stream: {path}"
                 )
             audio_label = f"a{index}"
             audio_labels.append(f"[{audio_label}]")
@@ -794,14 +794,14 @@ def assemble_video(
     if native_clip_audio:
         if audio_path or music_path:
             raise RuntimeError(
-                "Native Meta audio mode cannot be combined with external voice or music."
+                "Generated-scene audio cannot be combined with external voice or music."
             )
         if not seamless_scenes:
-            raise RuntimeError("Native Meta audio requires seamless scene assembly.")
+            raise RuntimeError("Generated-scene audio requires seamless scene assembly.")
         missing_audio = [path for path in clip_paths if not _has_audio(path)]
         if missing_audio:
             raise RuntimeError(
-                "One or more Meta AI scenes have no native audio; refusing to "
+                "One or more generated scenes have no embedded audio; refusing to "
                 "publish a silent or partly silent episode: " + ", ".join(missing_audio)
             )
         total = (
@@ -809,7 +809,7 @@ def assemble_video(
             if target_duration
             else sum(_dur(path) for path in clip_paths)
         )
-        print(f"[Assembler] Preserving Meta AI native voice across {total:.1f}s")
+        print(f"[Assembler] Preserving generated scene audio across {total:.1f}s")
     else:
         if not audio_path:
             raise RuntimeError("External audio path is required when native audio is disabled.")

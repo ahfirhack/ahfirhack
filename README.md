@@ -70,6 +70,7 @@ Go to: **Repo → Settings → Secrets and variables → Actions → New reposit
 | `OPENROUTER_API_KEY` | optional free-tier prompt-provider key |
 | `CEREBRAS_API_KEY` | optional free-tier prompt-provider key |
 | `HF_TOKEN` | optional Hugging Face Inference Providers token |
+| `AI_HORDE_API_KEY` | optional free AI Horde key; anonymous mode works without it |
 | `MISTRAL_API_KEY` | optional Mistral free/experimental-tier key |
 | `COHERE_API_KEY` | optional Cohere trial-tier key |
 | `NVIDIA_API_KEY` | optional NVIDIA NIM developer key |
@@ -107,12 +108,13 @@ You can also trigger it manually: **Actions → daily_upload → Run workflow**
 ## How It Works
 
 ```
-Script (12-provider active-model failover, then the channel's SQLite reserve)
+Script (13-provider active-model failover, then the channel's SQLite reserve)
     ↓
 Channel 3: Meta AI Create in persistent Chrome → 3 × 10-second scenes
+           Meta quota fallback: AI Horde images + Edge TTS motion scenes
 Other channels: ranked topic-matched clips for hook → escalation → payoff
     ↓
-Channel 3: preserve Meta video voice/audio; no added music
+Channel 3: preserve generated scene voice/audio; no added music
 Other channels: TTS voice + music
     ↓
 Assembly (FFmpeg — 1440×2560 vertical)
@@ -135,7 +137,8 @@ stop the run before upload. There is no synthetic color-card or black-video
 fallback. Results are ranked by topic overlap and joined as equal, gapless
 hook/escalation/payoff segments. Media credits are added to the YouTube
 description automatically. Channel 3 adds no hook text, captions, end screen,
-external voiceover, or background music; its Meta workflow is unchanged.
+or background music. Its normal Meta workflow keeps native voice; the free
+fallback embeds the same locked Edge voice directly into each motion scene.
 
 ### Local no-upload preview
 
@@ -148,11 +151,12 @@ command continues through every selected channel, writes local MP4s under
 channel fails. Each rerun replaces that channel's previous preview and removes
 legacy timestamped test previews, so validation never accumulates duplicates.
 
-The script generator has twelve integrations and discovers currently active
+The script generator has thirteen integrations and discovers currently active
 models at runtime where catalogs are available. Its failover chain is Groq,
 Hugging Face Router, Mistral, NVIDIA NIM, Cloudflare Workers AI, OpenRouter
-Free, Cerebras, Cohere, Gemini, Nova, Claude, and Amazon Bedrock. Missing keys
-are skipped automatically. A daily `AI Script Generator Health` workflow
+Free, Cerebras, Cohere, Gemini, Nova, Claude, Amazon Bedrock, and the free AI
+Horde community queue. Missing keys are skipped automatically. A daily
+`AI Script Generator Health` workflow
 rotates through Channels 1, 2, and 4 (one per day to respect free-tier limits)
 and validates a fresh script and its packaging. Manual runs can target a
 specific channel or all three.
@@ -203,11 +207,20 @@ Temporary Meta service errors are retried four times with increasing delays.
 If Meta expires or challenges the session, the workflow stops before upload;
 repeat the login/export command to refresh the secret.
 
+If Meta reports that video generation is unavailable or its daily quota is
+exhausted, Channel 3 falls back to AI Horde's free volunteer image queue. Three
+kid-safe historical images are animated locally into ten-second vertical scenes,
+and the same locked free Edge voice is embedded in each clip. Anonymous AI Horde
+access works automatically with the public key `0000000000`; setting an
+`AI_HORDE_API_KEY` repository secret gives higher queue priority. AI Horde is a
+public volunteer service, so prompts and anonymous generations must be treated
+as public and must never contain credentials or private material.
+
 The signed-in Meta account must be eligible for Vibes video generation, be 18
 or older, and be in a supported region. Check `https://meta.ai/vibes` before
 exporting the session. If it shows an age/region restriction or Meta replies
-that video generation is unavailable, the pipeline fails immediately and does
-not substitute still images or GIFs.
+that video generation is unavailable, the pipeline uses the free narrated
+AI Horde motion-scene fallback described above.
 
 Prepare a prompt job without rendering or uploading:
 

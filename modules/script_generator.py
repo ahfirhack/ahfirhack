@@ -2,7 +2,7 @@
 script_generator.py (v9 — Conversational Voice-Optimized Scripts)
 Key changes:
 - Scripts written for VOICE (conversational, easy to listen to)
-- Discovers active models across twelve prompt providers at runtime
+- Discovers active models across thirteen prompt providers at runtime
 - Shorter scripts (80-100 words = ~35s) for higher completion rate
 - Searchable titles ("How to...", "Why...") for Shorts search filter
 - Loop-friendly endings that reference the hook
@@ -17,6 +17,7 @@ import time
 import boto3
 from botocore.exceptions import ClientError
 from config import (
+    AI_HORDE_ENABLED,
     AMAZON_ACCESS_KEY,
     AMAZON_REGION,
     AMAZON_SECRET_KEY,
@@ -1058,6 +1059,22 @@ def _try_claude(prompt: str) -> dict | None:
         return None
 
 
+def _try_ai_horde(prompt: str) -> dict | None:
+    """Use AI Horde's free volunteer text queue as the final online fallback."""
+    if not AI_HORDE_ENABLED:
+        return None
+    try:
+        from modules.ai_horde import generate_text
+
+        result = generate_text(prompt)
+        if result:
+            print("[ScriptGen] Script via AI Horde free community queue")
+        return result
+    except Exception as error:
+        _log_provider_error("AI Horde", error)
+        return None
+
+
 def _try_amazon(prompt: str) -> dict | None:
     """Discover and try active Anthropic text models on Amazon Bedrock."""
     if not AMAZON_ACCESS_KEY or not AMAZON_SECRET_KEY:
@@ -1194,6 +1211,7 @@ def generate_script(
         (_try_nova, "Nova"),
         (_try_claude, "Claude"),
         (_try_amazon, "Amazon Bedrock"),
+        (_try_ai_horde, "AI Horde"),
     ]
     niche_key = _detect_niche_key(niche)
     if niche_key == "kids_history":

@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 from config import (
+    AI_HORDE_ENABLED,
     META_AI_BROWSER_CHANNEL,
     META_AI_CHROME_PROFILE_DIR,
     META_AI_CREATE_URL,
@@ -673,7 +674,7 @@ def collect_rendered_clips(manifest: dict, job_dir: Path) -> list[str]:
     return [str(path) for path in expected]
 
 
-def ensure_rendered_clips(manifest: dict, job_dir: Path) -> list[str]:
+def _ensure_meta_rendered_clips(manifest: dict, job_dir: Path) -> list[str]:
     """Render every missing scene in Meta AI and return ordered clip paths."""
     renders_dir = job_dir / "renders"
     if all(
@@ -754,6 +755,34 @@ def ensure_rendered_clips(manifest: dict, job_dir: Path) -> list[str]:
             if browser is not None:
                 browser.close()
     return collect_rendered_clips(manifest, job_dir)
+
+
+def ensure_rendered_clips(manifest: dict, job_dir: Path) -> list[str]:
+    """Render with Meta first, then use the free fallback when unavailable."""
+    if AI_HORDE_ENABLED and manifest.get("render_backend") == "ai_horde_motion":
+        from modules.ai_horde import fallback_clip_paths, generate_motion_fallback
+
+        clips = fallback_clip_paths(manifest, job_dir)
+        return clips if clips is not None else generate_motion_fallback(manifest, job_dir)
+
+    try:
+        return _ensure_meta_rendered_clips(manifest, job_dir)
+    except MetaAIVideoUnavailable as meta_error:
+        if not AI_HORDE_ENABLED:
+            raise
+        print(
+            f"[FreeVideo] Meta unavailable ({meta_error}); switching to the "
+            "free AI Horde image-motion fallback"
+        )
+        try:
+            from modules.ai_horde import generate_motion_fallback
+
+            return generate_motion_fallback(manifest, job_dir)
+        except Exception as fallback_error:
+            raise MetaAIAutomationError(
+                "Meta video was unavailable and the free AI Horde fallback "
+                f"also failed: {fallback_error}"
+            ) from fallback_error
 
 
 def bootstrap_meta_login() -> None:
