@@ -1,10 +1,10 @@
 """
-video_assembler.py (v9 — 2K Quality, Voice-Synced Captions)
+video_assembler.py (v10 — fail-closed visuals and word-timed captions)
 - 2K Quality 1440×2560, 9:16 vertical, 12 Mbps, CRF 16
-- Captions sync with voice timing
-- Channel-specific voices
+- Large two-line captions use the narrator's real word boundaries
+- Black, flat-color, and broadcast test-pattern inputs are rejected
 - Visual hook in first 2s (stand-alone effect)
-- End-screen fade to black
+- Brief translucent CTA keeps the real footage visible
 """
 
 import os
@@ -14,22 +14,17 @@ import random
 import re
 import shutil
 import requests
+import json
+import statistics
+from collections import Counter
 from config import TEMP_DIR, OUTPUT_DIR, FONT_BASE_DIR, PREFERRED_FONTS, WINDOWS_FONT_PATHS, END_SCREEN_DURATION, VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_BITRATE, VIDEO_CRF
 
 # Use quality settings from config
 WIDTH  = VIDEO_WIDTH   # 1440 (2K)
 HEIGHT = VIDEO_HEIGHT # 2560 (2K)
 
-# Caption constants
-WORDS_PER_LINE         = 5
-MIN_LINES_PER_BLOCK    = 2
-MAX_LINES_PER_BLOCK    = 2
-# If script has ≤ this many words it is "too small" → show continuously
-SHORT_SCRIPT_THRESHOLD = 24
-# Font size for short-script continuous display (~14 pt equivalent at 1080p mobile)
-SHORT_SCRIPT_FONTSIZE  = 42
-CAPTION_FONTSIZE       = 50
-CAPTION_LINE_HEIGHT    = 62
+# Short phrase blocks are easier to read on a phone than sentence paragraphs.
+WORDS_PER_CAPTION = 4
 
 FONT_DOWNLOAD_URLS = {
     "Montserrat-Bold": "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-Bold.ttf",
@@ -44,8 +39,8 @@ FONT_DOWNLOAD_URLS_REGULAR = {
 CHANNEL_THEMES = {
     "silicon crime files": {
         "accent": "0xFF3131",
-        "caption_y_ratio": 0.56,
-        "caption_fontsize": 50,
+        "caption_y_ratio": 0.69,
+        "caption_fontsize": 78,
         "tagline": "CODE. POWER. CONSEQUENCES.",
         "hooks": (
             "THE EVIDENCE WAS DIGITAL",
@@ -55,8 +50,8 @@ CHANNEL_THEMES = {
     },
     "storyfuse": {
         "accent": "0xFF5A36",
-        "caption_y_ratio": 0.58,
-        "caption_fontsize": 52,
+        "caption_y_ratio": 0.70,
+        "caption_fontsize": 82,
         "tagline": "BIG STAKES. SHARP TWISTS. NO FILLER.",
         "hooks": (
             "THIS CHANGES EVERYTHING",
@@ -66,8 +61,8 @@ CHANNEL_THEMES = {
     },
     "stoic reset": {
         "accent": "0xE8B56A",
-        "caption_y_ratio": 0.60,
-        "caption_fontsize": 50,
+        "caption_y_ratio": 0.70,
+        "caption_fontsize": 76,
         "tagline": "ANCIENT WISDOM. MODERN STRENGTH.",
         "hooks": (
             "RESET YOUR RESPONSE",
@@ -79,8 +74,8 @@ CHANNEL_THEMES = {
 
 DEFAULT_THEME = {
     "accent": "0xFFFF00",
-    "caption_y_ratio": 0.58,
-    "caption_fontsize": CAPTION_FONTSIZE,
+    "caption_y_ratio": 0.70,
+    "caption_fontsize": 76,
     "tagline": "ONE IDEA. ONE ACTION.",
     "hooks": ("WATCH THIS", "DID YOU KNOW", "TRY THIS NOW"),
 }
@@ -184,6 +179,72 @@ def _has_audio(path: str) -> bool:
     return r.returncode == 0 and "audio" in r.stdout.lower()
 
 
+def _visual_quality_ok(path: str) -> bool:
+    """Reject black, flat-color, and broadcast test-pattern source clips."""
+    duration = _dur(path)
+    if duration <= 0:
+        print(f"[Assembler/VisualGuard] Unreadable clip rejected: {path}")
+        return False
+    frames = []
+    for ratio in (0.20, 0.50, 0.80):
+        result = subprocess.run(
+            [
+                "ffmpeg", "-v", "error", "-ss", f"{duration * ratio:.3f}",
+                "-i", path, "-frames:v", "1", "-vf", "scale=160:284",
+                "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+            ],
+            capture_output=True,
+        )
+        expected = 160 * 284 * 3
+        if result.returncode != 0 or len(result.stdout) < expected:
+            print(f"[Assembler/VisualGuard] Frame extraction failed: {path}")
+            return False
+        frames.append(result.stdout[:expected])
+
+    black_ratios = []
+    saturation_ratios = []
+    top_color_shares = []
+    luminance_variances = []
+    for frame in frames:
+        pixels = [tuple(frame[index:index + 3]) for index in range(0, len(frame), 3)]
+        luminance = [
+            0.2126 * red + 0.7152 * green + 0.0722 * blue
+            for red, green, blue in pixels
+        ]
+        quantized = Counter(
+            (red // 32, green // 32, blue // 32)
+            for red, green, blue in pixels
+        )
+        black_ratios.append(
+            sum(max(pixel) < 24 for pixel in pixels) / len(pixels)
+        )
+        saturation_ratios.append(
+            sum(max(pixel) - min(pixel) > 96 for pixel in pixels) / len(pixels)
+        )
+        top_color_shares.append(
+            sum(count for _, count in quantized.most_common(8)) / len(pixels)
+        )
+        luminance_variances.append(statistics.pvariance(luminance))
+
+    black_ratio = statistics.fmean(black_ratios)
+    saturation_ratio = statistics.fmean(saturation_ratios)
+    top_color_share = statistics.fmean(top_color_shares)
+    luminance_variance = statistics.fmean(luminance_variances)
+    rejected = (
+        black_ratio > 0.75
+        or luminance_variance < 90
+        or top_color_share > 0.97
+        or (saturation_ratio > 0.60 and top_color_share > 0.65)
+    )
+    print(
+        f"[Assembler/VisualGuard] {os.path.basename(path)}: "
+        f"black={black_ratio:.2f}, colors={top_color_share:.2f}, "
+        f"saturation={saturation_ratio:.2f}, variance={luminance_variance:.0f} "
+        f"-> {'REJECT' if rejected else 'PASS'}"
+    )
+    return not rejected
+
+
 def _mix_audio(voice_path: str, music_path: str, output_path: str, music_volume: float = 0.3) -> str:
     """
     Mix voiceover with background music.
@@ -223,8 +284,15 @@ def _mix_audio(voice_path: str, music_path: str, output_path: str, music_volume:
         "-i", voice_path,
         "-i", music_path,
         "-filter_complex",
-        f"[0:a]adelay=1000|1000[voice_delayed];[voice_delayed][1:a]amix=inputs=2:duration=first:weights=1 {music_volume}",
+        f"[0:a]adelay=1000|1000,highpass=f=65,"
+        f"acompressor=threshold=-18dB:ratio=2.5:attack=5:release=80,"
+        f"volume=1.12[voice];"
+        f"[1:a]volume={music_volume}[music];"
+        f"[voice][music]amix=inputs=2:duration=first:weights=1 1,"
+        f"loudnorm=I=-14:TP=-2.0:LRA=7[mixed]",
+        "-map", "[mixed]",
         "-t", str(total_dur),
+        "-c:a", "libmp3lame", "-b:a", "320k",
         output_path
     ], "mix_audio")
 
@@ -245,7 +313,7 @@ def _add_tech_hook_sfx(audio_path: str, total: float, output_path: str) -> str:
         "[1:a]highpass=f=1400,lowpass=f=7000,volume=0.18,"
         "tremolo=f=35:d=0.85[glitch];"
         "[boom][glitch]amix=inputs=2:duration=longest:dropout_transition=0,"
-        "alimiter=limit=0.92[sfx]",
+        "alimiter=limit=0.92:level=false[sfx]",
         "-map", "[sfx]", "-c:a", "pcm_s16le", sfx_path,
     ], "tech_hook_sfx")
     _ffmpeg([
@@ -254,7 +322,7 @@ def _add_tech_hook_sfx(audio_path: str, total: float, output_path: str) -> str:
         "-filter_complex",
         "[0:a]volume=1[base];[1:a]volume=0.9[sfx];"
         "[base][sfx]amix=inputs=2:duration=first:dropout_transition=0,"
-        "alimiter=limit=0.95[outa]",
+        "alimiter=limit=0.82:level=false[outa]",
         "-map", "[outa]", "-t", f"{total:.3f}",
         "-c:a", "libmp3lame", "-b:a", "320k", output_path,
     ], "mix_tech_hook_sfx")
@@ -265,7 +333,8 @@ def _add_tech_hook_sfx(audio_path: str, total: float, output_path: str) -> str:
 def _resize(inp, out):
     """Scale to 2K portrait 1440×2560, high quality."""
     _ffmpeg(["-i", inp,
-             "-vf", f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,crop={WIDTH}:{HEIGHT}",
+             "-vf", f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
+                    f"crop={WIDTH}:{HEIGHT},setsar=1",
              "-c:v", "libx264", "-preset", "medium", "-crf", str(VIDEO_CRF),
              "-c:a", "aac", "-b:a", "320k", "-r", "30",
              "-pix_fmt", "yuv420p", out], "resize")
@@ -435,21 +504,13 @@ def _build_caption_filter(
     speech_duration: float | None = None,
     minimum_start: float | None = None,
     channel_name: str = "",
+    word_timing_path: str = "",
 ) -> str:
-    """
-    Caption rules:
-    - 5 words per line
-    - 2-3 lines per block (never 1, never 4+)
-    - If script ≤ SHORT_SCRIPT_THRESHOLD words, show all lines continuously
-      until end of video at SHORT_SCRIPT_FONTSIZE (≈14 pt at 1080p).
-    """
-    words = script.split()
-    if not words:
-        return ""
+    """Build large phrase captions from Edge TTS's real word boundaries."""
     theme = _channel_theme(channel_name)
     accent = theme["accent"]
     caption_fontsize = int(theme["caption_fontsize"])
-    caption_line_height = caption_fontsize + 12
+    caption_line_height = caption_fontsize + 18
     caption_center_y = int(HEIGHT * float(theme["caption_y_ratio"]))
     caption_end = max(0.0, total_dur - end_screen_duration)
     speech_start = max(0.0, speech_start)
@@ -459,89 +520,133 @@ def _build_caption_filter(
     if speech_duration is None or speech_duration <= 0:
         speech_duration = max(0.0, caption_end - speech_start)
     speech_duration = min(speech_duration, max(0.0, caption_end - speech_start))
-
-    # Build lines of exactly 4 words (last line may have fewer)
-    all_lines = []
-    for i in range(0, len(words), WORDS_PER_LINE):
-        line = " ".join(words[i:i + WORDS_PER_LINE])
-        all_lines.append(_safe_text(line))
-
-    # ── SHORT SCRIPT: display all lines continuously until end ──
-    if len(words) <= SHORT_SCRIPT_THRESHOLD:
-        filters = []
-        short_start = minimum_start
-        short_end = min(caption_end, speech_start + speech_duration)
-        if short_end <= short_start:
-            return ""
-        block_h = len(all_lines) * (SHORT_SCRIPT_FONTSIZE + 10)
-        start_y = caption_center_y - block_h // 2
-        for li, line in enumerate(all_lines):
-            y = start_y + li * (SHORT_SCRIPT_FONTSIZE + 10)
-            color = accent if li == 0 else "white"
-            filters.append(
-                f"drawtext="
-                f"fontfile='{font_bold}':"
-                f"text='{line}':"
-                f"fontsize={SHORT_SCRIPT_FONTSIZE}:"
-                f"fontcolor={color}:"
-                f"borderw=3:bordercolor=black:"
-                f"box=1:boxcolor=black@0.42:boxborderw=14:"
-                f"x=(w-text_w)/2:y={y}:"
-                f"enable='between(t,{short_start:.2f},{short_end:.2f})'"
-            )
-        return ",".join(filters)
-
-    # ── NORMAL: group lines into blocks of 2-3, timed across video ──
-    blocks = []
-    idx = 0
-    while idx < len(all_lines):
-        remaining = len(all_lines) - idx
-        if remaining == 1 and blocks:
-            # Append orphan line to last block (keeps ≤ 3)
-            blocks[-1].append(all_lines[idx])
-            idx += 1
-        else:
-            size = MIN_LINES_PER_BLOCK if remaining == MIN_LINES_PER_BLOCK else min(MAX_LINES_PER_BLOCK, remaining)
-            blocks.append(all_lines[idx:idx + size])
-            idx += size
-
     if speech_duration <= 0:
         return ""
 
-    total_spoken_words = sum(len(" ".join(block).split()) for block in blocks)
+    timed_words = []
+    if word_timing_path and os.path.exists(word_timing_path):
+        try:
+            with open(word_timing_path, "r", encoding="utf-8") as handle:
+                for raw_line in handle:
+                    item = json.loads(raw_line)
+                    if item.get("type") != "WordBoundary":
+                        continue
+                    text = _safe_text(str(item.get("text", "")).strip())
+                    if not text:
+                        continue
+                    timed_words.append({
+                        "text": text,
+                        "start": float(item["offset"]) / 10_000_000,
+                        "end": float(item["offset"] + item["duration"]) / 10_000_000,
+                    })
+        except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
+            print(f"[Assembler] Ignoring invalid word timings: {error}")
+            timed_words = []
+
+    # Deepgram and older cached audio have no boundary sidecar. Retain a clean
+    # estimated fallback for those channels, while Channels 1/2 require the
+    # sidecar at voice generation time.
+    if not timed_words:
+        words = [_safe_text(word) for word in script.split() if _safe_text(word)]
+        step = speech_duration / max(len(words), 1)
+        timed_words = [
+            {"text": word, "start": index * step, "end": (index + 1) * step}
+            for index, word in enumerate(words)
+        ]
+    if not timed_words:
+        return ""
+
+    # Restore punctuation-aware phrase boundaries from the original script.
+    # Edge returns exact timing but deliberately omits punctuation in its word
+    # events, so grouping raw events alone can join two different sentences.
+    script_tokens = script.split()
+    if len(script_tokens) == len(timed_words):
+        for item, token in zip(timed_words, script_tokens):
+            cleaned = _safe_text(token).strip(".,!?()—-")
+            if cleaned:
+                item["text"] = cleaned
+            item["break_after"] = bool(re.search(r"[.!?;:]\s*$", token))
+    else:
+        sentence_counts = [
+            len(sentence.split())
+            for sentence in re.split(r"(?<=[.!?;:])\s+", script.strip())
+            if sentence.strip()
+        ]
+        consumed = 0
+        total_script_words = max(sum(sentence_counts), 1)
+        for count in sentence_counts[:-1]:
+            consumed += count
+            boundary = round(consumed / total_script_words * len(timed_words)) - 1
+            if 0 <= boundary < len(timed_words):
+                timed_words[boundary]["break_after"] = True
+
+    sentences = []
+    sentence = []
+    for word in timed_words:
+        sentence.append(word)
+        if word.get("break_after"):
+            sentences.append(sentence)
+            sentence = []
+    if sentence:
+        sentences.append(sentence)
+
+    cues = []
+    for sentence in sentences:
+        group_count = max(1, (len(sentence) + WORDS_PER_CAPTION - 1) // WORDS_PER_CAPTION)
+        base_size, extra = divmod(len(sentence), group_count)
+        start = 0
+        for group_index in range(group_count):
+            size = base_size + (1 if group_index < extra else 0)
+            cues.append(sentence[start:start + size])
+            start += size
+
     filters = []
-    elapsed_words = 0
-    for block in blocks:
-        block_words = len(" ".join(block).split())
-        raw_start = speech_start + speech_duration * (
-            elapsed_words / max(total_spoken_words, 1)
+    for cue_index, cue in enumerate(cues):
+        raw_start = speech_start + cue[0]["start"]
+        next_start = (
+            speech_start + cues[cue_index + 1][0]["start"]
+            if cue_index + 1 < len(cues)
+            else speech_start + min(speech_duration, cue[-1]["end"] + 0.22)
         )
-        elapsed_words += block_words
-        raw_end = speech_start + speech_duration * (
-            elapsed_words / max(total_spoken_words, 1)
-        )
+        raw_end = max(speech_start + cue[-1]["end"], next_start)
         if raw_end <= minimum_start:
             continue
         t_start = max(raw_start, minimum_start)
         t_end = min(raw_end, caption_end)
         if t_end <= t_start:
             continue
-        block_h = len(block) * caption_line_height
-        start_y = caption_center_y - block_h // 2
 
-        for li, line in enumerate(block):
-            y = start_y + li * caption_line_height
-            color = accent if li == 0 else "white"
+        words = [item["text"].upper() for item in cue]
+        if len(words) <= 2:
+            lines = [" ".join(words)]
+        else:
+            split_at = min(
+                range(1, len(words)),
+                key=lambda index: abs(
+                    len(" ".join(words[:index])) - len(" ".join(words[index:]))
+                ),
+            )
+            lines = [" ".join(words[:split_at]), " ".join(words[split_at:])]
+
+        block_height = len(lines) * caption_line_height + 56
+        box_y = caption_center_y - block_height // 2
+        enable = f"between(t,{t_start:.3f},{t_end:.3f})"
+        filters.extend([
+            f"drawbox=x=70:y={box_y}:w={WIDTH}-140:h={block_height}:"
+            f"color=black@0.72:t=fill:enable='{enable}'",
+            f"drawbox=x=70:y={box_y}:w={WIDTH}-140:h=7:"
+            f"color={accent}@0.98:t=fill:enable='{enable}'",
+        ])
+        text_y = box_y + 24
+        for line_index, line in enumerate(lines):
+            color = accent if len(lines) > 1 and line_index == 1 else "white"
             filters.append(
-                f"drawtext="
-                f"fontfile='{font_bold}':"
-                f"text='{line}':"
-                f"fontsize={caption_fontsize}:"
-                f"fontcolor={color}:"
-                f"borderw=4:bordercolor=black:"
-                f"box=1:boxcolor=black@0.55:boxborderw=16:"
-                f"x=(w-text_w)/2:y={y}:"
-                f"enable='between(t,{t_start:.2f},{t_end:.2f})'"
+                f"drawtext=fontfile='{font_bold}':text='{line}':"
+                f"fontsize={caption_fontsize}:fontcolor={color}:"
+                f"borderw=6:bordercolor=black@0.95:shadowx=4:shadowy=4:"
+                f"shadowcolor=black@0.75:x=(w-text_w)/2:"
+                f"y={text_y + line_index * caption_line_height}:"
+                f"enable='{enable}'"
             )
     return ",".join(filters)
 
@@ -561,7 +666,7 @@ def _build_end_screen_filter(
     accent = theme["accent"]
     safe_name = _safe_text(channel_name.upper())
     return ",".join([
-        f"drawbox=x=0:y=0:w={WIDTH}:h={HEIGHT}:color=black@0.88:t=fill:enable='{eb}'",
+        f"drawbox=x=0:y=0:w={WIDTH}:h={HEIGHT}:color=black@0.55:t=fill:enable='{eb}'",
         f"drawbox=x={WIDTH}*0.18:y={HEIGHT}*0.39:w={WIDTH}*0.64:h=8:color={accent}:t=fill:enable='{eb}'",
         f"drawtext=fontfile='{font_bold}':text='{safe_name}':fontsize=76:fontcolor=white:borderw=5:bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2-90:enable='{eb}'",
         f"drawtext=fontfile='{font_bold}':text='SUBSCRIBE FOR MORE':fontsize=48:fontcolor={accent}:borderw=4:bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2+40:enable='{eb}'",
@@ -594,7 +699,7 @@ def _concat_seamless_scenes(
             else 0.0
         )
         filters.append(
-            f"[{index}:v]fps=30,"
+            f"[{index}:v]fps=30,setsar=1,"
             f"tpad=stop_mode=clone:stop_duration={scene_duration:.3f},"
             f"trim=start={trim_start:.3f}:duration={scene_duration:.3f},"
             f"setpts=PTS-STARTPTS[{video_label}]"
@@ -667,6 +772,8 @@ def assemble_video(
     evidence_label="",
     require_visuals=False,
     align_visual_beats=False,
+    reject_synthetic_visuals=False,
+    require_word_timestamps=False,
 ) -> str:
     """
     Assemble video with clips and audio.
@@ -683,6 +790,7 @@ def assemble_video(
     ext_audio = None
     voice_duration = 0.0
     speech_start = 0.0
+    word_timing_path = f"{audio_path}.words.jsonl" if audio_path else ""
     if native_clip_audio:
         if audio_path or music_path:
             raise RuntimeError(
@@ -705,6 +813,11 @@ def assemble_video(
     else:
         if not audio_path:
             raise RuntimeError("External audio path is required when native audio is disabled.")
+        if require_word_timestamps and not os.path.exists(word_timing_path):
+            raise RuntimeError(
+                "Synchronized captions require the voice word-boundary sidecar; "
+                "upload stopped instead of estimating caption timing."
+            )
         voice_duration = _dur(audio_path)
         # Mix voice + music if music is provided
         if music_path and os.path.exists(music_path):
@@ -733,6 +846,9 @@ def assemble_video(
     for i, cp in enumerate(clip_paths):
         rp = os.path.join(TEMP_DIR, f"r_{i}.mp4")
         try:
+            if reject_synthetic_visuals and not _visual_quality_ok(cp):
+                print(f"[Assembler] Rejected synthetic/empty visual: {cp}")
+                continue
             _resize(cp, rp)
             resized.append(rp)
         except Exception as e:
@@ -751,16 +867,10 @@ def assemble_video(
         )
 
     if not resized:
-        if require_visuals:
-            raise RuntimeError(
-                "No usable visual clips were downloaded; refusing to publish "
-                "a black or visually empty episode."
-            )
-        black = os.path.join(TEMP_DIR, "black.mp4")
-        _ffmpeg(["-f", "lavfi", "-i", f"color=c=black:s={WIDTH}x{HEIGHT}:r=30:d={total}",
-                 "-c:v", "libx264", "-preset", "medium", "-crf", "18",
-                 "-pix_fmt", "yuv420p", black], "black")
-        resized = [black]
+        raise RuntimeError(
+            "No photographic or generated scene passed visual validation; "
+            "refusing to publish a black, solid-color, or test-pattern video."
+        )
 
     # Concat clips to fill total duration. Browser-generated scenes use
     # normalized equal segments and reset timestamps, preventing black gaps.
@@ -821,12 +931,16 @@ def assemble_video(
             speech_duration=voice_duration,
             minimum_start=caption_minimum_start,
             channel_name=channel_name,
+            word_timing_path=word_timing_path,
         )
         end_f = _build_end_screen_filter(total, fb, fr, channel_name, end_duration)
         parts = [p for p in [hook_f, caption_f, end_f] if p]
         vf = ",".join(parts)
 
-    print(f"[Assembler] Rendering 2K {WIDTH}×{HEIGHT} (9:16) at {VIDEO_BITRATE/1000} Mbps CRF {VIDEO_CRF}...")
+    print(
+        f"[Assembler] Rendering {WIDTH}×{HEIGHT} (9:16) at "
+        f"{VIDEO_BITRATE / 1_000_000:.1f} Mbps CRF {VIDEO_CRF}..."
+    )
     if native_clip_audio and not vf:
         # The seamless concat is already normalized and encoded. Copying it
         # avoids another generation boundary and preserves its continuous A/V.

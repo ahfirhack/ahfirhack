@@ -357,6 +357,37 @@ def consume_prompt(path: str | Path, prompt_id: int) -> None:
         connection.close()
 
 
+def peek_prompt(
+    path: str | Path, channel_id: str = "channel_3"
+) -> dict | None:
+    """Read one available prompt for previews without reserving or consuming it."""
+    initialize_prompt_database(path, channel_id)
+    connection = sqlite3.connect(path, timeout=30)
+    connection.row_factory = sqlite3.Row
+    try:
+        row = connection.execute(
+            """SELECT * FROM prompts
+               WHERE channel_id=? AND status='available' ORDER BY id LIMIT 1""",
+            (channel_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "title": row["title"],
+            "script": row["script"],
+            "tags": json.loads(row["tags_json"]),
+            "search_query": row["search_query"],
+            "visual_queries": json.loads(row["visual_queries_json"]),
+            "hook_overlay": row["hook_overlay"],
+            "hook_accent": row["hook_accent"],
+            "evidence_label": row["evidence_label"],
+            "source_url": row["source_url"],
+            "_prompt_source": "sqlite_preview",
+        }
+    finally:
+        connection.close()
+
+
 def available_prompt_count(path: str | Path, channel_id: str = "channel_3") -> int:
     initialize_prompt_database(path, channel_id)
     connection = sqlite3.connect(path, timeout=30)

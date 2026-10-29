@@ -1,15 +1,16 @@
 """
-voiceover.py (v7 — Channel-Specific Voices, Deepgram + Edge TTS)
-Generates MP3 voiceover using Deepgram API with Edge TTS fallback.
-Each channel has its own voice matching the theme.
+voiceover.py (v8 — locked channel voices plus word boundaries)
+Generates MP3 narration with channel-specific delivery. Channels 1 and 2 use
+locked Edge voices and save exact word timings for synchronized captions.
 """
 
 import os
+import json
 import requests
 import subprocess
 import asyncio
 import edge_tts
-from config import DEEPGRAM_API_KEY, CHANNEL_VOICES, EDGE_VOICES
+from config import DEEPGRAM_API_KEY, CHANNEL_VOICES, EDGE_VOICES, EDGE_VOICE_SETTINGS
 
 # Deepgram models for each channel theme
 DEEPGRAM_MODELS = {
@@ -61,16 +62,50 @@ def _generate_deepgram(script: str, model: str, output_path: str) -> bool:
         return False
 
 
-def _generate_edge_tts(script: str, voice: str, output_path: str) -> bool:
-    """Generate voiceover using Edge TTS (free, no key required)."""
+def _generate_edge_tts(
+    script: str,
+    voice: str,
+    output_path: str,
+    settings: dict | None = None,
+    require_timestamps: bool = False,
+) -> bool:
+    """Generate voice plus word-boundary metadata using free Edge TTS."""
     try:
+        profile = settings or {}
+        metadata_path = output_path + ".words.jsonl"
+
         async def _synthesize():
-            communicate = edge_tts.Communicate(script, voice, rate="+0%")
-            await communicate.save(output_path)
+            communicate = edge_tts.Communicate(
+                script,
+                voice,
+                rate=profile.get("rate", "+0%"),
+                pitch=profile.get("pitch", "+0Hz"),
+                volume=profile.get("volume", "+0%"),
+                boundary="WordBoundary",
+            )
+            await communicate.save(output_path, metadata_path)
 
         asyncio.run(_synthesize())
         duration = _get_duration(output_path)
-        print(f"[Voiceover/EdgeTTS] Generated {duration:.1f}s audio with voice: {voice}")
+        boundaries = 0
+        if os.path.exists(metadata_path):
+            with open(metadata_path, "r", encoding="utf-8") as handle:
+                for line in handle:
+                    try:
+                        if json.loads(line).get("type") == "WordBoundary":
+                            boundaries += 1
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+        minimum_boundaries = max(3, int(len(script.split()) * 0.65))
+        if require_timestamps and boundaries < minimum_boundaries:
+            raise RuntimeError(
+                f"Edge TTS returned only {boundaries} word boundaries; "
+                f"need at least {minimum_boundaries} for synchronized captions."
+            )
+        print(
+            f"[Voiceover/EdgeTTS] Generated {duration:.1f}s audio with voice: "
+            f"{voice} ({boundaries} timed words)"
+        )
         return True
 
     except Exception as e:
@@ -84,6 +119,7 @@ def generate_voiceover(
     channel_id: str = None,
     strict_voice: bool = False,
     voice_provider: str | None = None,
+    require_timestamps: bool = False,
 ) -> str:
     """
     Converts script text to MP3 voiceover.
@@ -109,11 +145,18 @@ def generate_voiceover(
     else:
         deepgram_model = DEEPGRAM_MODELS.get("channel_1", "aura-2-zeus-en")
         edge_voice = EDGE_VOICES.get("channel_1", "en-US-GuyNeural")
+    edge_settings = EDGE_VOICE_SETTINGS.get(channel_id or "channel_1", {})
 
     print(f"[Voiceover] Generating for {channel_id or 'default'} | Deepgram: {deepgram_model} | Edge: {edge_voice}")
 
     if voice_provider == "edge":
-        if _generate_edge_tts(script, edge_voice, output_path):
+        if _generate_edge_tts(
+            script,
+            edge_voice,
+            output_path,
+            settings=edge_settings,
+            require_timestamps=require_timestamps,
+        ):
             return output_path
         raise RuntimeError(
             f"Locked Edge voice generation failed for {channel_id or 'default'} "
@@ -132,7 +175,13 @@ def generate_voiceover(
         )
 
     # Fallback to Edge TTS
-    if _generate_edge_tts(script, edge_voice, output_path):
+    if _generate_edge_tts(
+        script,
+        edge_voice,
+        output_path,
+        settings=edge_settings,
+        require_timestamps=require_timestamps,
+    ):
         return output_path
 
     # If both fail, raise error

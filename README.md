@@ -120,17 +120,31 @@ Assembly (FFmpeg — 1440×2560 vertical)
 Upload to YouTube as #Shorts
 ```
 
-Channels 1, 2, and 4 use locked, channel-specific Edge voices, synchronized
-two-line captions, and episode-specific hook cards. Their three narrative beats
-are matched against Pexels, Pixabay, Coverr, Wikimedia Commons, Internet
-Archive, and NASA media. Results are ranked by topic overlap and joined as
-equal, gapless hook/escalation/payoff segments. When no usable video matches a
-beat, a public-domain or NASA still is converted locally into a vertical motion
-clip. If no external asset clears the relevance gate, FFmpeg creates an
-exact-topic kinetic beat card locally, keeping the workflow free and fully
-automatic. Media credits are added to the YouTube description automatically.
-Channel 3 adds no hook text, captions, end screen, external voiceover, or
-background music; its Meta workflow is unchanged.
+Channels 1, 2, and 4 use locked, channel-specific Edge voices, large two-line
+captions driven by the narrator's real word boundaries, and episode-specific
+hook cards. Their three narrative beats are matched against Pexels, Pixabay,
+Coverr, Wikimedia Commons, Internet Archive, NASA, Openverse, and the Art
+Institute of Chicago. Channel 1 can also capture its official government record
+as the evidence-first visual. Wikimedia's maintained HD video derivatives are
+preferred before a licensed photograph or public-domain artwork is converted
+locally into a vertical cinematic motion clip.
+
+The non-Meta channels fail closed: black frames, flat-color clips, broadcast
+test patterns, missing narrative beats, and missing caption timing metadata all
+stop the run before upload. There is no synthetic color-card or black-video
+fallback. Results are ranked by topic overlap and joined as equal, gapless
+hook/escalation/payoff segments. Media credits are added to the YouTube
+description automatically. Channel 3 adds no hook text, captions, end screen,
+external voiceover, or background music; its Meta workflow is unchanged.
+
+### Local no-upload preview
+
+Run `python test_pipeline.py` to exercise all four channels without importing
+or calling the YouTube uploader. Pass `1`, `2`, `3`, or `4` to test selected
+channels. Preview prompts are read without reserving or consuming SQLite rows,
+and preview media history is isolated from production deduplication state. The
+command continues through every selected channel, writes local MP4s under
+`output_videos/`, and returns a nonzero exit status if any channel fails.
 
 The script generator has twelve integrations and discovers currently active
 models at runtime where catalogs are available. Its failover chain is Groq,

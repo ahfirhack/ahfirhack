@@ -312,6 +312,7 @@ def process_video(
             channel_id=channel["id"],
             strict_voice=channel.get("strict_voice", False),
             voice_provider=channel.get("voice_provider"),
+            require_timestamps=channel.get("require_word_timestamps", False),
         )
     elif native_audio:
         print("[2/6] Voiceover skipped (using Meta AI native character voice)")
@@ -340,6 +341,7 @@ def process_video(
             niche_keywords=channel.get("keywords", []),
             visual_queries=data.get("visual_queries", []),
             include_attributions=True,
+            source_url=data.get("source_url", ""),
         )
 
     # 5. Assemble (Full HD 1080x1920, 9:16 Shorts)
@@ -368,6 +370,8 @@ def process_video(
         evidence_label=data.get("evidence_label", ""),
         require_visuals=channel.get("require_visuals", False),
         align_visual_beats=channel.get("align_visual_beats", False),
+        reject_synthetic_visuals=channel.get("reject_synthetic_visuals", False),
+        require_word_timestamps=channel.get("require_word_timestamps", False),
     )
 
     # 6. Upload as YouTube Short

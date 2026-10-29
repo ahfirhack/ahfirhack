@@ -333,6 +333,21 @@ def _visible_last(locator):
     return None
 
 
+def _visible_last_in_content(locator):
+    """Ignore matching text in Meta's chat-history sidebar."""
+    for index in range(locator.count() - 1, -1, -1):
+        candidate = locator.nth(index)
+        try:
+            if not candidate.is_visible():
+                continue
+            bounds = candidate.bounding_box()
+            if bounds is None or bounds.get("x", 0) >= 260:
+                return candidate
+        except Exception:
+            continue
+    return None
+
+
 def _dismiss_consent(page) -> None:
     for label in (r"accept all", r"allow all", r"accept optional cookies"):
         try:
@@ -504,10 +519,22 @@ def _wait_for_media(page, media_kind: str, baseline: set[str]) -> str:
                     re.I,
                 )
             )
-            if _visible_last(unavailable) is not None:
+            if _visible_last_in_content(unavailable) is not None:
                 raise MetaAIVideoUnavailable(
                     f"Meta AI reports that {media_kind} generation is not "
                     "available for the signed-in account."
+                )
+            quota = page.get_by_text(
+                re.compile(
+                    rf"{re.escape(media_kind)} generation limit|"
+                    r"reached your limit|upgrade to do more|wait until tomorrow",
+                    re.I,
+                )
+            )
+            if _visible_last_in_content(quota) is not None:
+                raise MetaAIVideoUnavailable(
+                    f"Meta AI's daily {media_kind} generation limit has been "
+                    "reached for the signed-in account; no scene was created."
                 )
             transient = page.get_by_text(
                 re.compile(
@@ -517,14 +544,14 @@ def _wait_for_media(page, media_kind: str, baseline: set[str]) -> str:
                     re.I,
                 )
             )
-            if _visible_last(transient) is not None:
+            if _visible_last_in_content(transient) is not None:
                 raise MetaAITransientError(
                     "Meta AI reported a temporary generation service failure."
                 )
             failure = page.get_by_text(
                 re.compile(r"couldn't generate|unable to generate|try again|generation failed", re.I)
             )
-            if _visible_last(failure) is not None:
+            if _visible_last_in_content(failure) is not None:
                 raise MetaAIAutomationError("Meta AI reported that media generation failed.")
         except MetaAIAutomationError:
             raise
@@ -704,16 +731,18 @@ def ensure_rendered_clips(manifest: dict, job_dir: Path) -> list[str]:
                         raise
                     except MetaAITransientError as error:
                         last_error = error
-                        delay = min(attempt * 60, 180)
-                        print(
-                            f"[MetaAI] Scene {scene['index']} hit a temporary "
-                            f"Meta service failure; retrying in {delay}s"
-                        )
-                        time.sleep(delay)
+                        if attempt < META_AI_MAX_RETRIES:
+                            delay = min(attempt * 60, 180)
+                            print(
+                                f"[MetaAI] Scene {scene['index']} hit a temporary "
+                                f"Meta service failure; retrying in {delay}s"
+                            )
+                            time.sleep(delay)
                     except Exception as error:
                         last_error = error
                         print(f"[MetaAI] Scene {scene['index']} failed: {type(error).__name__}")
-                        time.sleep(min(attempt * 10, 30))
+                        if attempt < META_AI_MAX_RETRIES:
+                            time.sleep(min(attempt * 10, 30))
                 if last_error is not None:
                     raise MetaAIAutomationError(
                         f"Scene {scene['index']} failed after {META_AI_MAX_RETRIES} attempts: {last_error}"

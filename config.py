@@ -85,13 +85,13 @@ WINDOWS_FONT_PATHS = {
 }
 
 # ── END SCREEN ───────────────────────────────────────────
-END_SCREEN_DURATION = 4   # reduced from 5 — every second of dead time kills completion rate
+END_SCREEN_DURATION = 2   # brief CTA while the real footage remains visible
 
 # ── VIDEO QUALITY ───────────────────────────────────────────
 # Higher than Full HD for better quality
 VIDEO_WIDTH  = 1440  # 2K width (better than 1080)
 VIDEO_HEIGHT = 2560  # 2K height (better than 1920)
-VIDEO_BITRATE = 12000  # 12 Mbps for higher quality
+VIDEO_BITRATE = 12_000_000  # 12 Mbps for higher quality
 VIDEO_CRF     = 16     # Lower CRF = higher quality
 
 # ── CHANNEL-SPECIFIC VOICE SETTINGS ───────────────────────
@@ -105,10 +105,17 @@ CHANNEL_VOICES = {
 
 # Edge TTS fallback voices (if Deepgram fails)
 EDGE_VOICES = {
-    "channel_1": "en-US-GuyNeural",      # Male, urgent investigative delivery
-    "channel_2": "en-GB-RyanNeural",      # Male, British, dramatic storyteller
+    "channel_1": "en-US-AndrewMultilingualNeural", # Natural investigative narrator
+    "channel_2": "en-GB-RyanNeural",      # British cinematic storyteller
     "channel_3": "en-US-GuyNeural",       # Milo: fixed energetic male narrator
     "channel_4": "en-US-ChristopherNeural", # Male, deep, authoritative
+}
+
+EDGE_VOICE_SETTINGS = {
+    "channel_1": {"rate": "+6%", "pitch": "-10Hz", "volume": "+4%"},
+    "channel_2": {"rate": "-2%", "pitch": "-4Hz", "volume": "+4%"},
+    "channel_3": {"rate": "+0%", "pitch": "+0Hz", "volume": "+0%"},
+    "channel_4": {"rate": "-4%", "pitch": "-6Hz", "volume": "+3%"},
 }
 
 # ── ALGORITHM-OPTIMIZED SCHEDULE ─────────────────────────
@@ -142,6 +149,7 @@ CHANNELS = [
         "use_voice": True,
         "require_visuals": True,
         "align_visual_beats": True,
+        "reject_synthetic_visuals": True,
         "music_mood": "suspense",
         "category_id": "28",
         "hook_style": "evidence_first",
@@ -150,6 +158,7 @@ CHANNELS = [
         "hook_sfx": "tech_glitch_boom",
         "voice_provider": "edge",
         "strict_voice": True,
+        "require_word_timestamps": True,
         "strict_ai_prompts": True,
         "allow_curated_fallback": False,
         "track_prompt_history": True,
@@ -171,6 +180,7 @@ CHANNELS = [
         "use_voice": True,
         "require_visuals": True,
         "align_visual_beats": True,
+        "reject_synthetic_visuals": True,
         "music_mood": "mysterious",
         "category_id": "24",
         "hook_style": "climax_first",
@@ -178,6 +188,7 @@ CHANNELS = [
         "opening_style": "story_suspense",
         "voice_provider": "edge",
         "strict_voice": True,
+        "require_word_timestamps": True,
         "strict_ai_prompts": True,
         "allow_curated_fallback": False,
         "track_prompt_history": True,
@@ -226,6 +237,7 @@ CHANNELS = [
         "use_voice": True,
         "require_visuals": True,
         "align_visual_beats": True,
+        "reject_synthetic_visuals": True,
         "music_mood": "cinematic",
         "category_id": "27",
         "hook_style": "pain_point", # Start with a common modern struggle (e.g., burnout)
