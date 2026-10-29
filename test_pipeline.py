@@ -3,7 +3,7 @@ test_pipeline.py — Full pipeline WITHOUT uploading. Preview in output_videos/.
 Usage: python test_pipeline.py         # all channels
        python test_pipeline.py 2       # channel_2 only
 """
-import atexit, os, sys, time, datetime, shutil, tempfile
+import atexit, glob, os, sys, time, datetime, shutil, tempfile
 sys.path.insert(0, os.path.dirname(__file__))
 from config import CHANNELS, TEMP_DIR, OUTPUT_DIR, SHORT_DURATION_TARGET
 from modules.script_generator import generate_script
@@ -28,9 +28,27 @@ video_fetcher_module.USED_VIDEOS_FILE = os.path.join(
 )
 atexit.register(shutil.rmtree, _PREVIEW_STATE_DIR, ignore_errors=True)
 
+
+def _reset_channel_preview(channel_id: str) -> str:
+    """Keep exactly one replaceable no-upload preview per channel."""
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    output_name = f"PREVIEW_{channel_id}.mp4"
+    patterns = (
+        f"TEST_{channel_id}_*.mp4",
+        f"FIXED_PREVIEW_{channel_id}.mp4",
+        output_name,
+    )
+    for pattern in patterns:
+        for candidate in glob.glob(os.path.join(OUTPUT_DIR, pattern)):
+            if os.path.isfile(candidate):
+                os.remove(candidate)
+                print(f"  Removed old local preview: {candidate}")
+    return output_name
+
 def test_channel(ch):
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     sn = ch["id"].replace(" ", "_")
+    output_filename = _reset_channel_preview(sn)
     uv = ch.get("use_voice", True)
     use_music = ch.get("use_music", True)
     native_audio = ch.get("native_clip_audio", False)
@@ -98,7 +116,7 @@ def test_channel(ch):
         clip_paths=clips,
         audio_path=audio_for_video,
         script=data["script"],
-        output_filename=f"TEST_{sn}_{ts}.mp4",
+        output_filename=output_filename,
         channel_name=ch["name"],
         music_path=music_path if voice_path else None,
         target_duration=ch.get("target_duration"),

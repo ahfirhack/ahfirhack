@@ -144,7 +144,9 @@ or calling the YouTube uploader. Pass `1`, `2`, `3`, or `4` to test selected
 channels. Preview prompts are read without reserving or consuming SQLite rows,
 and preview media history is isolated from production deduplication state. The
 command continues through every selected channel, writes local MP4s under
-`output_videos/`, and returns a nonzero exit status if any channel fails.
+`output_videos/PREVIEW_channel_N.mp4`, and returns a nonzero exit status if any
+channel fails. Each rerun replaces that channel's previous preview and removes
+legacy timestamped test previews, so validation never accumulates duplicates.
 
 The script generator has twelve integrations and discovers currently active
 models at runtime where catalogs are available. Its failover chain is Groq,
