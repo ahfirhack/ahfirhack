@@ -1,177 +1,56 @@
-name: YouTube Upload (Every 12 Hours)
-
-on:
-  schedule:
-    # Run once every 23 hours: 00:00 and 12:00 UTC
-    - cron: "0 */23 * * *"
-  workflow_dispatch:
-    inputs:
-      channel:
-        description: Channel to process (scheduled runs always process all channels)
-        required: true
-        default: all
-        type: choice
-        options:
-          - all
-          - "1"
-          - "2"
-          - "3"
-          - "4"
-      meta_timeout_seconds:
-        description: Meta render wait per attempt for a manual test
-        required: true
-        default: "300"
-        type: string
-
-concurrency:
-  group: youtube-automation-persistent-browser
-  cancel-in-progress: false
-
-jobs:
-  upload:
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
-
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v7
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Install ffmpeg, fonts, and virtual display
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y --no-install-recommends \
-            ffmpeg fonts-open-sans fonts-dejavu-core fonts-liberation xvfb
-
-      - name: Install Python dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
-          python -m playwright install chromium --with-deps
-
-      - name: Restore Meta AI browser session
-        env:
-          META_AI_STORAGE_STATE_B64: ${{ secrets.META_AI_STORAGE_STATE_B64 }}
-        run: |
-          if [ -z "$META_AI_STORAGE_STATE_B64" ]; then
-            echo "Missing META_AI_STORAGE_STATE_B64. Run python main.py --meta-login locally and publish the exported storage state as documented."
-            exit 1
-          fi
-          printf '%s' "$META_AI_STORAGE_STATE_B64" | base64 --decode | gzip --decompress > "$RUNNER_TEMP/meta-ai-storage-state.json"
-          python -c 'import json, os; json.load(open(os.environ["RUNNER_TEMP"] + "/meta-ai-storage-state.json", encoding="utf-8"))'
-
-      - name: Restore unfinished Meta AI video job
-        uses: actions/cache/restore@v6
-        with:
-          path: meta_ai_jobs
-          key: meta-ai-video-jobs-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: |
-            meta-ai-video-jobs-${{ runner.os }}-
-
-      - name: Restore credentials
-        run: |
-          mkdir -p credentials
-          printf '%s' "${{ secrets.CHANNEL1_SECRETS_B64 }}" | base64 --decode > credentials/channel1_secrets.json
-          printf '%s' "${{ secrets.CHANNEL2_SECRETS_B64 }}" | base64 --decode > credentials/channel2_secrets.json
-          printf '%s' "${{ secrets.CHANNEL3_SECRETS_B64 }}" | base64 --decode > credentials/channel3_secrets.json
-          printf '%s' "${{ secrets.CHANNEL4_SECRETS_B64 }}" | base64 --decode > credentials/channel4_secrets.json
-
-          # FIX: Create a generic secrets.json if your script specifically looks for that name
-          cp credentials/channel1_secrets.json credentials/secrets.json
-
-          printf '%s' "${{ secrets.CHANNEL1_TOKEN_B64 }}"   | base64 --decode > credentials/channel1_token.json
-          printf '%s' "${{ secrets.CHANNEL2_TOKEN_B64 }}"   | base64 --decode > credentials/channel2_token.json
-          printf '%s' "${{ secrets.CHANNEL3_TOKEN_B64 }}"   | base64 --decode > credentials/channel3_token.json
-          printf '%s' "${{ secrets.CHANNEL4_TOKEN_B64 }}"   | base64 --decode > credentials/channel4_token.json
-
-      - name: Ensure dedup and prompt-reserve state exists
-        run: |
-          [ -f used_videos.json ]  || echo '[]' > used_videos.json
-          [ -f used_scripts.json ] || echo '[]' > used_scripts.json
-          [ -f used_prompts.json ] || echo '[]' > used_prompts.json
-          python modules/prompt_reserve.py prompt_reserve_channel_1.sqlite3 channel_1
-          python modules/prompt_reserve.py prompt_reserve_channel_2.sqlite3 channel_2
-          python modules/prompt_reserve.py prompt_reserve.sqlite3 channel_3
-          python modules/prompt_reserve.py prompt_reserve_channel_4.sqlite3 channel_4
-
-      - name: Run pipeline (12-hour schedule handled by GitHub Actions)
-        env:
-          NOVA_API_KEY:          ${{ secrets.NOVA_API_KEY }}
-          GROQ_API_KEY:          ${{ secrets.GROQ_API_KEY }}
-          OPENROUTER_API_KEY:    ${{ secrets.OPENROUTER_API_KEY }}
-          CEREBRAS_API_KEY:      ${{ secrets.CEREBRAS_API_KEY }}
-          HF_TOKEN:              ${{ secrets.HF_TOKEN }}
-          AI_HORDE_API_KEY:      ${{ secrets.AI_HORDE_API_KEY }}
-          MISTRAL_API_KEY:       ${{ secrets.MISTRAL_API_KEY }}
-          COHERE_API_KEY:        ${{ secrets.COHERE_API_KEY }}
-          NVIDIA_API_KEY:        ${{ secrets.NVIDIA_API_KEY }}
-          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          GEMINI_API_KEY:        ${{ secrets.GEMINI_API_KEY }}
-          CLAUDE_API_KEY:        ${{ secrets.CLAUDE_API_KEY }}
-          ANTHROPIC_API_KEY:     ${{ secrets.ANTHROPIC_API_KEY }}
-          AMAZON_ACCESS_KEY:     ${{ secrets.AMAZON_ACCESS_KEY }}
-          AMAZON_SECRET_KEY:     ${{ secrets.AMAZON_SECRET_KEY }}
-          AMAZON_REGION:         ${{ secrets.AMAZON_REGION || 'us-east-1' }}
-          PEXELS_API_KEY:        ${{ secrets.PEXELS_API_KEY }}
-          PIXABAY_API_KEY:       ${{ secrets.PIXABAY_API_KEY }}
-          JAMENDO_CLIENT_ID:     ${{ secrets.JAMENDO_CLIENT_ID }}
-          FREESOUND_API_KEY:     ${{ secrets.FREESOUND_API_KEY }}
-          ELEVENLABS_API_KEY:    ${{ secrets.ELEVENLABS_API_KEY }}
-          DEEPGRAM_API_KEY:      ${{ secrets.DEEPGRAM_API_KEY }}
-          COVERR_API_KEY:        ${{ secrets.COVERR_API_KEY }}
-          VIDEEZY_CLIENT_ID:     ${{ secrets.VIDEEZY_CLIENT_ID }}
-          VIDEEZY_CLIENT_SECRET: ${{ secrets.VIDEEZY_CLIENT_SECRET }}
-          YOUTUBE_API_KEY:       ${{ secrets.YOUTUBE_API_KEY }}
-          META_AI_STORAGE_STATE_FILE: ${{ runner.temp }}/meta-ai-storage-state.json
-          META_AI_JOBS_DIR:      ${{ github.workspace }}/meta_ai_jobs
-          META_AI_BROWSER_CHANNEL: chromium
-          META_AI_HEADLESS: "false"
-          META_AI_TIMEOUT_SECONDS: ${{ inputs.meta_timeout_seconds || '900' }}
-          META_AI_MAX_RETRIES: "4"
-          AI_HORDE_ENABLED: "true"
-          SELECTED_CHANNEL: ${{ inputs.channel || 'all' }}
-        run: |
-          args=(--once)
-          if [ "$SELECTED_CHANNEL" != "all" ]; then
-            args+=(--channel "$SELECTED_CHANNEL")
-          fi
-          xvfb-run -a python -u main.py "${args[@]}"
-
-      - name: Upload Meta AI diagnostics
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: meta-ai-diagnostics-${{ github.run_id }}
-          path: |
-            meta_ai_jobs/**/debug/*.png
-            meta_ai_jobs/**/manifest.json
-            meta_ai_jobs/**/meta_prompts.txt
-          if-no-files-found: ignore
-          retention-days: 2
-
-      - name: Save unfinished Meta AI video job
-        if: always()
-        uses: actions/cache/save@v6
-        with:
-          path: meta_ai_jobs
-          key: meta-ai-video-jobs-${{ runner.os }}-${{ github.run_id }}
-
-      - name: Commit dedup state
-        if: always()
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add used_videos.json used_scripts.json used_prompts.json \
-            prompt_reserve.sqlite3 prompt_reserve_channel_1.sqlite3 \
-            prompt_reserve_channel_2.sqlite3 prompt_reserve_channel_4.sqlite3 || true
-          git diff --staged --quiet || git commit -m "chore: update dedup state [skip ci]"
-          git push || true
+All workflows
+Showing runs from all workflows
+Filter workflow runs
+Search runs
+Workflow runs
+518 workflow runs
+YouTube Upload (Every 12 Hours)
+failed:
+YouTube Upload (Every 12 Hours)
+#565:
+Manually run
+by
+ahfirhack
+main
+18 minutes ago
+3m 48s
+AI Script Generator Health
+completed successfully:
+AI Script Generator Health
+#7:
+Scheduled
+main
+Today at 11:22 AM
+36s
+YouTube Upload (Every 12 Hours)
+failed:
+YouTube Upload (Every 12 Hours)
+#564:
+Scheduled
+main
+Oct 30, 9:55 PM EDT
+15m 32s
+AI Script Generator Health
+completed successfully:
+AI Script Generator Health
+#6:
+Scheduled
+main
+Oct 30, 11:57 AM EDT
+40s
+YouTube Upload (Every 12 Hours)
+failed:
+YouTube Upload (Every 12 Hours)
+#563:
+Scheduled
+main
+Oct 29, 10:17 PM EDT
+55m 15s
+YouTube Upload (Every 12 Hours)
+failed:
+YouTube Upload (Every 12 Hours)
+#562:
+Manually run
+by
+ahfirhack
+m
