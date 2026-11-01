@@ -60,6 +60,7 @@ class GitHubSmokeTests(unittest.TestCase):
                 Path(image).write_bytes(b'png')
 
             with patch.object(smoke, '_storage_state_path', return_value=root / 'session.json'), \
+                 patch.object(smoke, '_storage_state_slots', return_value=[(1, root / 'session.json')]), \
                  patch.object(smoke, 'create_job', return_value=(manifest, job)), \
                  patch.object(smoke, '_load_playwright', return_value=context_manager), \
                  patch.object(smoke, '_launch_context', return_value=(context, browser)), \
@@ -93,6 +94,7 @@ class GitHubSmokeTests(unittest.TestCase):
             }))
             context_manager, context, browser = self._browser_mocks()
             with patch.object(smoke, '_storage_state_path', return_value=root / 'session.json'), \
+                 patch.object(smoke, '_storage_state_slots', return_value=[(1, root / 'session.json')]), \
                  patch.object(smoke, 'create_job', return_value=({'scenes': [
                      {'index': 1, 'filename': 'scene_01.mp4', 'prompt': 'Test'}]}, job)), \
                  patch.object(smoke, '_load_playwright', return_value=context_manager), \
@@ -132,6 +134,7 @@ class GitHubSmokeTests(unittest.TestCase):
                 return str(out)
 
             with patch.object(smoke, '_storage_state_path', return_value=root / 'session.json'), \
+                 patch.object(smoke, '_storage_state_slots', return_value=[(1, root / 'session.json')]), \
                  patch.object(smoke, 'create_job', return_value=({'scenes': scenes}, job)), \
                  patch.object(smoke, '_load_playwright', return_value=context_manager), \
                  patch.object(smoke, '_launch_context', return_value=(context, browser)), \

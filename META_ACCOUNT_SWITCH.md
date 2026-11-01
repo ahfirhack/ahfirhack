@@ -50,6 +50,32 @@ Chrome stays open and **your normal profile is not deleted or copied**.
    python switch_meta_account.py --from-open-chrome --publish --repo OWNER/REPO
    ```
 
+## Configure four ordered Meta accounts
+
+Account slot 1 is always the primary account. Slots 2, 3 and 4 are isolated
+fallbacks used only when an earlier account is signed out, quota-limited,
+ineligible or unavailable. Cookies and storage are never merged between slots.
+
+For each additional account, sign into that account in regular Chrome, enable
+remote debugging temporarily, then import and publish its numbered slot:
+
+```powershell
+# Current primary account (already configured)
+python switch_meta_account.py --from-open-chrome --slot 1 --publish --repo OWNER/REPO
+
+# Repeat after switching regular Chrome to each different Meta account
+python switch_meta_account.py --from-open-chrome --slot 2 --publish --repo OWNER/REPO
+python switch_meta_account.py --from-open-chrome --slot 3 --publish --repo OWNER/REPO
+python switch_meta_account.py --from-open-chrome --slot 4 --publish --repo OWNER/REPO
+```
+
+The local files are `meta_ai_storage_state.json` (primary), then
+`meta_ai_storage_state_2.json` through `_4.json`. GitHub stores them as
+`META_AI_STORAGE_STATE_B64`, then `META_AI_STORAGE_STATE_2_B64` through `_4_B64`.
+All are ignored by Git. A rendered-but-undownloaded scene never fails over,
+because generating it again on another account would spend quota and duplicate
+the remote render.
+
 **Important limitations**
 
 - Chrome must already be signed in; this does not bypass login, challenges,
@@ -75,10 +101,10 @@ Chrome stays open and **your normal profile is not deleted or copied**.
 
 # Switching Meta AI to a new account
 
-This project uses **two separate login artifacts**:
+This project uses separate login artifacts for every configured account:
 
 - Local Playwright Chrome profile: controls the browser used to sign in interactively.
-- `META_AI_STORAGE_STATE_B64`: a GitHub Actions repository secret carrying the saved session on fresh GitHub runners.
+- An ordered `META_AI_STORAGE_STATE[_2..4]_B64` GitHub Actions secret for each saved session on fresh runners.
 
 **Changing the local browser alone is not sufficient.** Update the secret so scheduled jobs use the new account. The YouTube OAuth tokens do **not** need to be changed.
 
@@ -118,7 +144,7 @@ Or, for new attempts, sign in and publish in one step:
 python switch_meta_account.py --profile another-new-account --publish --repo OWNER/REPO
 ```
 
-The script passes a gzip+base64-encoded session directly to `gh secret set` via standard input. It does **not** print the secret, put it in the command line, or commit it to Git. The repository workflow already reads `META_AI_STORAGE_STATE_B64`; no workflow changes are necessary.
+The script passes a gzip+base64-encoded session directly to `gh secret set` via standard input. It does **not** print the secret, put it in the command line, or commit it to Git. The repository workflow reads the primary `META_AI_STORAGE_STATE_B64` and optional numbered secrets `META_AI_STORAGE_STATE_2_B64` through `_4_B64`; no workflow changes are necessary.
 
 You can confirm the secret exists under **GitHub repository → Settings → Secrets and variables → Actions**. GitHub will not show the secret's value.
 

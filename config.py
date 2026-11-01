@@ -8,8 +8,8 @@ NUM_VIDEOS = 1
 # Upload to YouTube after generation
 UPLOAD_TO_YOUTUBE = True
 
-# Run every 8 hours (GitHub Actions or optional local daemon)
-UPLOAD_INTERVAL_HOURS = 8
+# Run every 6 hours (GitHub Actions or optional local daemon)
+UPLOAD_INTERVAL_HOURS = 6
 UPLOAD_INTERVAL_SECONDS = UPLOAD_INTERVAL_HOURS * 3600
 
 # ═══════════════════════════════════════════════════════
@@ -102,7 +102,7 @@ VIDEO_CRF     = 16     # Lower CRF = higher quality
 
 # ── META-ONLY SCHEDULE / OUTPUT ───────────────────────────
 # Each run generates one 50-second Short per channel; GitHub Actions
-# invokes the same pipeline three times/day (every 8 hours).
+# invokes the same pipeline four times/day (every 6 hours).
 VIDEOS_PER_CHANNEL_PER_DAY  = 1  # legacy name; means one upload per channel per run
 SHORT_DURATION_TARGET        = META_SCENE_COUNT * META_SCENE_DURATION  # exactly 50 seconds
 VIDEO_DURATION_TARGET        = SHORT_DURATION_TARGET

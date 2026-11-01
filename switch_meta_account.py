@@ -36,6 +36,17 @@ STATE_PATH = PROJECT_DIR / "meta_ai_storage_state.json"  # excluded by .gitignor
 SECRET_NAME = "META_AI_STORAGE_STATE_B64"
 
 
+def _slot_state_path(slot: int) -> Path:
+    return (
+        STATE_PATH if slot == 1 else
+        PROJECT_DIR / f"meta_ai_storage_state_{slot}.json"
+    )
+
+
+def _slot_secret_name(slot: int) -> str:
+    return SECRET_NAME if slot == 1 else f"META_AI_STORAGE_STATE_{slot}_B64"
+
+
 def _validate_state(path: Path) -> bytes:
     if not path.is_file():
         raise RuntimeError(
@@ -184,13 +195,14 @@ def _save_attached_meta_state(session_name: str, destination: Path) -> None:
     _chrome_cli([f"-s={session_name}", "run-code", code], seconds=120)
 
 
-def _import_open_chrome() -> None:
+def _import_open_chrome(state_path: Path | None = None) -> None:
     """Import Meta-only login from Chrome *without relaunching Chrome*.
 
     Playwright CLI can attach by channel to a Chrome instance after the user
     explicitly turns on remote debugging in the currently running browser.
     This command never reads Chrome profile databases or changes its files.
     """
+    state_path = state_path or STATE_PATH
     if os.name != "nt":
         print("[MetaAI] Chrome attachment is supported on macOS/Linux too if Playwright CLI finds Chrome.")
     PROFILE_ROOT.mkdir(parents=True, exist_ok=True)
@@ -230,10 +242,10 @@ def _import_open_chrome() -> None:
                   "The dedicated Vibes Studio may require signing in there first.")
         pending_path.write_bytes(filtered)
         _validate_state(pending_path)
-        pending_path.replace(STATE_PATH)
+        pending_path.replace(state_path)
         print("[MetaAI] Imported only Meta/Facebook/Instagram session data.")
         print("[MetaAI] Other websites' cookies and storage were excluded.")
-        print(f"[MetaAI] Saved new session: {STATE_PATH.name}")
+        print(f"[MetaAI] Saved new session: {state_path.name}")
         print("[MetaAI] Chrome remains open and your other Chrome tabs are untouched.")
     finally:
         # Delete unfiltered state immediately: it may temporarily include
@@ -249,7 +261,9 @@ def _import_open_chrome() -> None:
                     print("[MetaAI] Could not confirm detachment; Chrome itself was not closed.")
 
 
-def _login(profile_name: str, reuse: bool) -> None:
+def _login(profile_name: str, reuse: bool,
+           state_path: Path | None = None) -> None:
+    state_path = state_path or STATE_PATH
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,47}", profile_name):
         raise RuntimeError("Profile name must be 1–48 characters: letters, numbers, - or _.")
     profile_dir = PROFILE_ROOT / profile_name
@@ -278,16 +292,19 @@ def _login(profile_name: str, reuse: bool) -> None:
         bootstrap_meta_login()
         _validate_state(pending_path)
         # Only replace the previously active session after successful editor verification.
-        pending_path.replace(STATE_PATH)
+        pending_path.replace(state_path)
     finally:
         if pending_path.exists():
             pending_path.unlink()
 
-    print(f"[MetaAI] New local session activated: {STATE_PATH.name}")
+    print(f"[MetaAI] New local session activated: {state_path.name}")
     print("[MetaAI] Existing browser profiles are preserved.")
 
 
-def _publish(repo: str) -> None:
+def _publish(repo: str, state_path: Path | None = None,
+             secret_name: str | None = None) -> None:
+    state_path = state_path or STATE_PATH
+    secret_name = secret_name or SECRET_NAME
     if not repo or not re.fullmatch(r"(?:[\w.-]+/)?[\w.-]+/[\w.-]+", repo):
         raise RuntimeError(
             "For a safe, explicit destination, specify --repo OWNER/REPO "
@@ -299,14 +316,14 @@ def _publish(repo: str) -> None:
             "then retry --publish-only --repo OWNER/REPO."
         )
 
-    session_data = _validate_state(STATE_PATH)
+    session_data = _validate_state(state_path)
     # GitHub workflow expects a gzip-compressed, base64-encoded JSON storage state.
     secret_value = base64.b64encode(gzip.compress(session_data, mtime=0)).decode("ascii")
     command = [
-        "gh", "secret", "set", SECRET_NAME,
+        "gh", "secret", "set", secret_name,
         "--app", "actions", "--repo", repo,
     ]
-    print(f"[GitHub] Updating Actions secret {SECRET_NAME} in {repo} ...")
+    print(f"[GitHub] Updating Actions secret {secret_name} in {repo} ...")
     try:
         result = subprocess.run(
             command, input=secret_value, text=True, cwd=PROJECT_DIR,
@@ -332,8 +349,8 @@ def main() -> int:
         help="Reuse Meta sign-in from your already-running regular Chrome (Chrome 144+).",
     )
     parser.add_argument(
-        "--profile", default="new-account",
-        help="Dedicated new browser profile name (default: new-account).",
+        "--profile",
+        help="Dedicated browser profile name (default: meta-account-SLOT).",
     )
     parser.add_argument(
         "--reuse-profile", action="store_true",
@@ -350,6 +367,10 @@ def main() -> int:
     parser.add_argument(
         "--repo", help="Exact GitHub destination as OWNER/REPO (required for publishing)."
     )
+    parser.add_argument(
+        "--slot", type=int, choices=(1, 2, 3, 4), default=1,
+        help="Ordered Meta account slot; 1 is the primary account (default: 1).",
+    )
     args = parser.parse_args()
     if args.publish and args.publish_only:
         parser.error("--publish and --publish-only are mutually exclusive")
@@ -357,19 +378,23 @@ def main() -> int:
         parser.error("--from-open-chrome and --publish-only are mutually exclusive")
     if args.from_open_chrome and args.reuse_profile:
         parser.error("--reuse-profile is only for the dedicated new-profile login")
+    state_path = _slot_state_path(args.slot)
+    secret_name = _slot_secret_name(args.slot)
+    profile_name = args.profile or f"meta-account-{args.slot}"
     try:
         if args.from_open_chrome:
-            _import_open_chrome()
+            _import_open_chrome(state_path)
         elif not args.publish_only:
-            _login(args.profile, args.reuse_profile)
+            _login(profile_name, args.reuse_profile, state_path)
         if args.publish or args.publish_only:
-            _publish(args.repo or "")
+            _publish(args.repo or "", state_path, secret_name)
         else:
             print(
                 "[Next] To activate the new account in scheduled GitHub Actions, run:\n"
-                "  python switch_meta_account.py --publish-only --repo OWNER/REPO"
+                "  python switch_meta_account.py --publish-only "
+                f"--slot {args.slot} --repo OWNER/REPO"
             )
-            print("[Next] Do not commit or share meta_ai_storage_state.json.")
+            print(f"[Next] Do not commit or share {state_path.name}.")
         return 0
     except (RuntimeError, OSError, KeyboardInterrupt) as error:
         print(f"[MetaAI] {error}", file=sys.stderr)

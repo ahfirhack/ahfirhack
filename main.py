@@ -419,11 +419,11 @@ def run_channel_batch(channel_ids: set[str] | None = None,
     return bool(results) and ok == len(results)
 
 
-# ── 8-hour schedule loop ──────────────────────────────────────
+# ── 6-hour schedule loop ──────────────────────────────────────
 def run_scheduled(*, workers: int | None = None):
-    """Run the pipeline every 8 hours when launched as a local daemon."""
+    """Run the pipeline every 6 hours when launched as a local daemon."""
     print(f"\n{'='*60}")
-    print(f"  YouTube Automation — 8-Hour Schedule")
+    print(f"  YouTube Automation — 6-Hour Schedule")
     print(f"  Upload interval: {UPLOAD_INTERVAL_SECONDS / 3600} hours")
     print(f"{'='*60}\n")
 

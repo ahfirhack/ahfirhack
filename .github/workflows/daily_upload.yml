@@ -1,10 +1,10 @@
-name: YouTube Upload (Meta AI Only Every 8 Hours)
+name: YouTube Upload (Meta AI Only Every 6 Hours)
 
 on:
   schedule:
-    # Exactly every eight hours: 00:13, 08:13, 16:13 UTC.
+    # Exactly every six hours: 00:13, 06:13, 12:13, 18:13 UTC.
     # Offset avoids GitHub cron congestion at the top of each hour.
-    - cron: "13 0,8,16 * * *"
+    - cron: "13 */6 * * *"
   workflow_dispatch:
     inputs:
       channel:
@@ -61,13 +61,32 @@ jobs:
       - name: Restore Meta AI browser session
         env:
           META_AI_STORAGE_STATE_B64: ${{ secrets.META_AI_STORAGE_STATE_B64 }}
+          META_AI_STORAGE_STATE_2_B64: ${{ secrets.META_AI_STORAGE_STATE_2_B64 }}
+          META_AI_STORAGE_STATE_3_B64: ${{ secrets.META_AI_STORAGE_STATE_3_B64 }}
+          META_AI_STORAGE_STATE_4_B64: ${{ secrets.META_AI_STORAGE_STATE_4_B64 }}
         run: |
           if [ -z "$META_AI_STORAGE_STATE_B64" ]; then
             echo "Missing META_AI_STORAGE_STATE_B64. Import your signed-in Chrome with switch_meta_account.py --from-open-chrome, then --publish-only --repo OWNER/REPO."
             exit 1
           fi
-          printf '%s' "$META_AI_STORAGE_STATE_B64" | base64 --decode | gzip --decompress > "$RUNNER_TEMP/meta-ai-storage-state.json"
-          python -c 'import json, os; json.load(open(os.environ["RUNNER_TEMP"] + "/meta-ai-storage-state.json", encoding="utf-8"))'
+          restore_meta_session() {
+            local encoded="$1"
+            local destination="$2"
+            [ -z "$encoded" ] && return 0
+            printf '%s' "$encoded" | base64 --decode | gzip --decompress > "$destination"
+          }
+          restore_meta_session "$META_AI_STORAGE_STATE_B64" "$RUNNER_TEMP/meta-ai-account-1.json"
+          restore_meta_session "$META_AI_STORAGE_STATE_2_B64" "$RUNNER_TEMP/meta-ai-account-2.json"
+          restore_meta_session "$META_AI_STORAGE_STATE_3_B64" "$RUNNER_TEMP/meta-ai-account-3.json"
+          restore_meta_session "$META_AI_STORAGE_STATE_4_B64" "$RUNNER_TEMP/meta-ai-account-4.json"
+          python - <<'PY'
+          import glob, json, os
+          files = sorted(glob.glob(os.path.join(os.environ["RUNNER_TEMP"], "meta-ai-account-*.json")))
+          for path in files:
+              state = json.load(open(path, encoding="utf-8"))
+              assert isinstance(state.get("cookies"), list), "Invalid Meta storage state"
+          print(f"[MetaAI] Restored {len(files)} isolated account session(s); account 1 is primary")
+          PY
 
       - name: Restore unfinished Meta AI video job
         uses: actions/cache/restore@v6
@@ -123,7 +142,8 @@ jobs:
           AMAZON_SECRET_KEY:     ${{ secrets.AMAZON_SECRET_KEY }}
           AMAZON_REGION:         ${{ secrets.AMAZON_REGION || 'us-east-1' }}
 
-          META_AI_STORAGE_STATE_FILE: ${{ runner.temp }}/meta-ai-storage-state.json
+          META_AI_STORAGE_STATE_FILE: ${{ runner.temp }}/meta-ai-account-1.json
+          META_AI_STORAGE_STATE_FILES: ${{ runner.temp }}/meta-ai-account-1.json,${{ runner.temp }}/meta-ai-account-2.json,${{ runner.temp }}/meta-ai-account-3.json,${{ runner.temp }}/meta-ai-account-4.json
           META_AI_JOBS_DIR:      ${{ github.workspace }}/meta_ai_jobs
           META_AI_BROWSER_CHANNEL: chromium
           META_AI_HEADLESS: "false"

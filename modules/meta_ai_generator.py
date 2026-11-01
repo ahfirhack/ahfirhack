@@ -11,6 +11,7 @@ import json
 import os
 import re
 import subprocess
+import threading
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -36,24 +37,32 @@ from config import (
 # Channel-specific look/character/voice locks repeat VERBATIM in every scene.
 CHANNEL_LOCKS = {
     "channel_1": {
+        "speaker": "the on-camera documentary presenter",
+        "voice_id": "SCF-PRESENTER-01",
         "character": "An original adult documentary presenter with short dark hair, charcoal field jacket, neutral shirt, and the same face, build, wardrobe, posture and gestures across all five scenes. All people depicted in alleged crimes are unnamed illustrative actors, not claims of authentic footage or exact likenesses.",
         "style": "Photorealistic cinematic investigative documentary reenactment, grounded public-record details, realistic tech settings, high contrast, natural human motion, sharp professional cinematography. No defamatory inventions, fake evidence, or fabricated quotes.",
         "voice": "The presenter is the only speaker, always with the exact same adult American English voice, accent, pitch, timbre and recording ambience. All sound is synchronized IN-SCENE, never a detached voiceover. Other people are silent; their lips stay closed while the presenter speaks.",
         "role": "investigative documentary with one on-camera presenter",
     },
     "channel_2": {
+        "speaker": "the original lead actor",
+        "voice_id": "STORYFUSE-LEAD-01",
         "character": "The same original human lead actor from the episode's opening story, identical face, eye color, hairstyle, age, costume and accessories. Derive the identity and costume from the FULL STORY CONTEXT, lock that depiction across every scene. Other actors maintain distinct stable faces and costumes.",
         "style": "Photorealistic cinematic short film with natural human anatomy and physical acting, tense grounded suspense, expressive reaction shots, film lighting, realistic environments and a single continuous camera path. Never change location without a visible on-screen transition in the action.",
         "voice": "One lead actor speaks the exact scene line in their own stable realistic voice, synchronized on camera as scene dialogue; never a floating narrator. Any other actor is silent while that actor speaks: no mimicking, no simultaneous words or lip movement. Maintain individual voice identity for anyone who ever speaks.",
         "role": "cinematic live-action story with original real-looking actors",
     },
     "channel_3": {
+        "speaker": "Milo",
+        "voice_id": "MILO-01",
         "character": "Milo is a ten-year-old boy with warm medium-brown skin, large hazel eyes, soft rounded features, short dark-brown curls with one curl falling over his forehead. He wears the exact same teal explorer jacket with rolled sleeves, cream shirt, golden-yellow scarf, navy trousers, coral-red sneakers and round gold-and-turquoise time compass on his belt. Never change his design or outfit unless shown physically on camera.",
         "style": "Original premium polished 3D animated family history adventure with gentle depth of field, cinematic lighting, beautiful historical environments, soft materials and child-friendly motion. Do not copy another studio's characters or franchise.",
         "voice": "Milo is the only speaker, always with the same warm bright childlike American English voice and exact pitch, timbre, accent, pacing and recording quality; his lips naturally synchronize. All other characters remain silent and do not imitate his words. Native in-scene voice and ambience only.",
         "role": "kid-safe continuous 3D animated historical adventure",
     },
     "channel_4": {
+        "speaker": "the on-camera lead actor",
+        "voice_id": "STOIC-LEAD-01",
         "character": "The same original adult human lead (early thirties, short dark hair, medium skin tone, simple navy jacket and neutral shirt), with stable facial proportions, age, outfit and hairstyle in every scene. No anonymous strangers replace the lead.",
         "style": "Photorealistic grounded cinematic drama of modern life and practical Stoic decisions; soft natural light, tactile real spaces, subtle emotional acting, restrained tasteful camera movement, no disembodied text graphics.",
         "voice": "The lead actor is the only speaker, with the same calm measured adult American English voice in every scene; spoken words come from their on-screen mouth with natural synchronized lip movement, not external narration. Other characters remain completely silent with closed mouths while the lead talks.",
@@ -92,6 +101,17 @@ NEGATIVE_LOCK = (
 # closed instead of publishing a misleading upscale.
 MIN_META_SOURCE_WIDTH = 1080
 MIN_META_SOURCE_HEIGHT = 1920
+META_PROMPT_SCHEMA_VERSION = 3
+
+_EPISODE_PREFIXES = {
+    "channel_1": "SCF",
+    "channel_2": "STF",
+    "channel_3": "EHK",
+    "channel_4": "STR",
+}
+
+_ACCOUNT_FAILURE_LOCK = threading.Lock()
+_UNAVAILABLE_ACCOUNT_STATES: set[str] = set()
 
 class MetaAIAutomationError(RuntimeError):
     """Meta AI could not complete an unattended browser operation."""
@@ -133,7 +153,12 @@ def _save_manifest(manifest: dict, job_dir: Path) -> None:
 
 
 def _split_narration(script: str, count: int) -> list[str]:
-    """Divide a chronological script into nonempty scene lines (about 10s each)."""
+    """Divide dialogue into semantic, chronological lines of about ten seconds.
+
+    Prefer complete sentence boundaries. Older SQLite-reserve stories do not
+    have a structured scene plan, so this keeps those stories usable without
+    cutting a sentence merely to make every scene have the same word count.
+    """
     # End-card calls-to-action disrupt continuous story, so omit them from
     # on-screen scene speech (the original upload story is unchanged).
     script = re.sub(r"\s*(?:Like and Subscribe for more|Subscribe for more|Like and subscribe)[.!?]*\s*$", "", script.strip(), flags=re.I)
@@ -148,10 +173,42 @@ def _split_narration(script: str, count: int) -> list[str]:
         raise MetaAIAutomationError(
             f"Story is {len(words)} words; cap is 125 words for a 50-second video."
         )
-    # Balanced word budget preserves the exact plot order; punctuation retained.
+    sentences = [
+        match.group(0).strip()
+        for match in re.finditer(r"\S.*?(?:[.!?](?=\s|$)|$)", script)
+        if match.group(0).strip()
+    ]
+    if len(sentences) >= count:
+        beats = []
+        cursor = 0
+        for scene_index in range(count):
+            groups_left = count - scene_index
+            sentences_left = len(sentences) - cursor
+            if groups_left == 1:
+                take = sentences_left
+            else:
+                max_take = sentences_left - (groups_left - 1)
+                remaining_words = sum(
+                    len(sentence.split()) for sentence in sentences[cursor:]
+                )
+                target = remaining_words / groups_left
+                take = 1
+                current = len(sentences[cursor].split())
+                while take < max_take:
+                    next_total = current + len(sentences[cursor + take].split())
+                    if abs(next_total - target) > abs(current - target):
+                        break
+                    current = next_total
+                    take += 1
+            beats.append(" ".join(sentences[cursor:cursor + take]))
+            cursor += take
+        if all(5 <= len(beat.split()) <= 25 for beat in beats):
+            return beats
+
+    # Last-resort compatibility for legacy stories with too few or unusually
+    # long sentences. New AI stories are required to supply scene_plan instead.
     div, rem = divmod(len(words), count)
-    beats = []
-    offset = 0
+    beats, offset = [], 0
     for index in range(count):
         size = div + (1 if index < rem else 0)
         beats.append(" ".join(words[offset:offset + size]))
@@ -159,35 +216,137 @@ def _split_narration(script: str, count: int) -> list[str]:
     return beats
 
 
-def _scene_prompt(index: int, narration: str, story: dict, channel: dict) -> str:
-    """Channel identity + whole-story context + one scene's exact speech."""
+def _story_scene_plan(story: dict, count: int) -> list[dict]:
+    """Return five validated dialogue/action/end-frame rows.
+
+    New text generators provide these rows directly. Existing prompt-reserve
+    records are upgraded deterministically from their chronological script.
+    """
+    raw_plan = story.get("scene_plan")
+    if isinstance(raw_plan, list) and len(raw_plan) == count:
+        normalized = []
+        for item in raw_plan:
+            if not isinstance(item, dict):
+                normalized = []
+                break
+            dialogue = " ".join(str(item.get("dialogue") or "").split())
+            action = " ".join(str(item.get("action") or "").split())
+            end_frame = " ".join(str(item.get("end_frame") or "").split())
+            if not (5 <= len(dialogue.split()) <= 25 and action and end_frame):
+                normalized = []
+                break
+            normalized.append({
+                "dialogue": dialogue,
+                "action": action,
+                "end_frame": end_frame,
+            })
+        if len(normalized) == count:
+            return normalized
+
+    beats = _split_narration(story["script"], count)
+    return [
+        {
+            "dialogue": beat,
+            "action": (
+                "Physically dramatize this chronological plot beat with the "
+                "locked lead visible and acting naturally"
+            ),
+            "end_frame": (
+                "Hold the lead, the active story object and the unchanged "
+                "environment in a clear moving composition"
+            ),
+        }
+        for beat in beats
+    ]
+
+
+def _episode_code(story: dict, channel: dict) -> str:
+    fingerprint = hashlib.sha256(
+        f"{story.get('title', '')}|{story.get('script', '')}".encode("utf-8")
+    ).hexdigest()[:6].upper()
+    return f"{_EPISODE_PREFIXES[channel['id']]}-{fingerprint}"
+
+
+def _scene_prompt(index: int, narration: str, story: dict, channel: dict, *,
+                  scene_plan: dict | None = None,
+                  episode_code: str | None = None) -> str:
+    """Build a timecoded production contract for one exact Meta scene."""
     locks = CHANNEL_LOCKS[channel["id"]]
-    attachment = (
-        "FIRST SCENE: establish the lead and setting immediately; no opening title."
-        if index == 1
-        else "MANDATORY IMAGE INPUT: use the attached prior scene FINAL FRAME pixel-for-pixel as this scene's FIRST FRAME."
+    plan = scene_plan or {
+        "action": "Show this chronological plot beat through visible physical action",
+        "end_frame": "Keep the lead and active story object clearly framed",
+    }
+    episode_code = episode_code or _episode_code(story, channel)
+    clip_code = f"{episode_code}-C{index}"
+    prior_code = "none" if index == 1 else f"{episode_code}-C{index - 1}"
+    next_code = "none" if index == META_SCENE_COUNT else f"{episode_code}-C{index + 1}"
+    start = (index - 1) * META_SCENE_DURATION
+    end = index * META_SCENE_DURATION
+    frame_letter = chr(ord("A") + index - 1)
+    reference = (
+        "No prior image for scene 1. Treat the written character bible below "
+        "as the source of truth and establish the reusable identity immediately."
+        if index == 1 else
+        "The attached PNG is the actual final frame of the previous Meta video. "
+        "Reproduce it as frame zero before continuing the same movement."
     )
-    ending = (
-        "Finish while the character and camera are still MOVING; leave an exact visual handoff for the next clip."
-        if index < META_SCENE_COUNT
-        else "Complete the final reveal during moving action, then stop without an outro or fade."
+    final_action = (
+        "Preserve active motion for the next clip; do not resolve the episode yet."
+        if index < META_SCENE_COUNT else
+        "Complete the final payoff in action, then stop without an outro or fade."
     )
-    # Distinguish narration context from one and only one scene voice line.
-    return " ".join((
-        f"META AI VIDEO GENERATION ONLY. Create EXACTLY {META_SCENE_DURATION} seconds of an original "
-        f"9:16 portrait VIDEO with synchronized native in-scene speech and natural ambience. "
-        f"Scene {index} of {META_SCENE_COUNT}; one seamless 50-second {locks['role']}. "
-        f"FULL STORY CONTEXT FOR PLOT AND IDENTITY, DO NOT SPEAK IN FULL: {story['script']} "
-        f"{attachment} "
-        f"LEAD CHARACTER IDENTITY LOCK: {locks['character']} "
-        f"CINEMATOGRAPHY AND STYLE LOCK: {locks['style']} "
-        f"VOICE AND LIP-SYNC LOCK: {locks['voice']} "
-        f"CONTINUITY LOCK: {CONTINUITY_LOCK} "
-        f"AUDIO-ONLY DIALOGUE—NEVER DISPLAY OR CAPTION THESE WORDS: '{narration}' "
-        f"VISUAL ACTION: Show the plot beat corresponding to this exact scene line while continuing from the prior shot. "
-        f"ENDING HANDOFF: {ending} "
-        f"NEGATIVE REQUIREMENTS: {NEGATIVE_LOCK}"
-    ).split())
+    stitch = (
+        f"prior source=none; establish the opening composition immediately. "
+        f"next source={next_code} must begin on this clip's exact final image "
+        "with unbroken ambience, score, camera direction and character motion."
+        if index == 1 else
+        (
+            f"prior source={prior_code}; reproduce that source as this clip's "
+            "identical first image. next source=none; preserve continuity through "
+            "the final payoff without an outro."
+            if index == META_SCENE_COUNT else
+            f"prior source={prior_code}; next source={next_code}. Reproduce the "
+            "prior source as this clip's identical first image, then make this "
+            "clip's final image the next source with unbroken ambience, score, "
+            "camera direction and character motion."
+        )
+    )
+    location = " ".join(str(story.get("search_query") or story["title"]).split())
+    return "\n".join((
+        f"EPISODE {episode_code} — {story['title']} | SCENE {index}/{META_SCENE_COUNT} | "
+        f"ABSOLUTE EPISODE TIME {start:02d}–{end:02d}s.",
+        "META AI VIDEO GENERATION ONLY.",
+        f"EXACT REFERENCE-IMAGE CHARACTER LOCK: {reference}",
+        f"CHARACTER BIBLE / DO NOT REDESIGN: {locks['character']}",
+        f"FIXED VOICE ID / DO NOT REGENERATE VOICE IDENTITY: "
+        f"{locks['speaker']}={locks['voice_id']}. {locks['voice']}",
+        f"PRODUCTION: Exactly {META_SCENE_DURATION}.00 seconds, vertical 9:16, "
+        "true source resolution 1080x1920 minimum (1440x2560 preferred), stable "
+        "24-or-30-fps motion, synchronized Meta-native dialogue, ambience and a "
+        "subtle continuous original score beneath speech. No separate voiceover, "
+        "external audio, captions, title card, intro, outro or transition.",
+        f"VISUAL STYLE LOCK: {locks['style']}",
+        f"LOCATION / STORY-STATE LOCK: {location}. Keep identical layout, prop state, "
+        "scale, time of day, lighting, camera axis and audio bed across all five clips.",
+        f"FULL EPISODE CONTEXT — FOR ACTION/IDENTITY ONLY, DO NOT SPEAK IN FULL: "
+        f"{story['script']}",
+        f"SPEAKING CAST FOR THIS CLIP: {locks['speaker']} [{locks['voice_id']}] says "
+        f"EXACTLY: “{narration}” Do not improvise, paraphrase or add words. "
+        "These words are audio only; never display them as text.",
+        "10-SECOND STORYBOARD:",
+        f"0.00–1.50s: Immediate first-frame hook/continuation from {prior_code}; "
+        "show the identity-locked lead and active story object with no logo animation.",
+        f"1.50–7.50s: Animate precisely: {plan['action']}.",
+        "7.50–9.75s: Let the locked lead react naturally while the camera gently "
+        "moves toward the unresolved focus; preserve physical and audio continuity.",
+        f"9.75–10.00s: LOCK LAST FRAME {frame_letter}: {plan['end_frame']}. {final_action}",
+        f"STITCH REQUIREMENT: {stitch}",
+        f"CONTINUITY CONTRACT: {CONTINUITY_LOCK}",
+        f"NEGATIVE REQUIREMENTS: {NEGATIVE_LOCK}",
+        "RENDER NOTES: no readable text is necessary. Avoid text-bearing props. "
+        "Save the ending frame as a PNG reference for the next clip.",
+        f"CLIP ID: {clip_code}",
+    ))
 
 
 def _render_prompt_markdown(manifest: dict) -> str:
@@ -220,7 +379,7 @@ def find_active_job(channel_id: str) -> tuple[dict, Path] | None:
         if (manifest.get("status") in {"awaiting_meta_ai", "rendering", "ready"}
                 and len(manifest.get("scenes", [])) == META_SCENE_COUNT
                 and manifest.get("render_backend") in (None, "meta_ai")
-                and manifest.get("schema_version") == 2):
+                and manifest.get("schema_version") == META_PROMPT_SCHEMA_VERSION):
             return manifest, manifest_path.parent
     return None
 
@@ -229,21 +388,31 @@ def create_job(channel: dict, story: dict) -> tuple[dict, Path]:
     fingerprint = hashlib.sha256(
         f"{story['title']}|{story['script']}".encode("utf-8")
     ).hexdigest()[:10]
-    job_id = f"{_slug(story['title'])}-{fingerprint}"
+    job_id = (
+        f"{_slug(story['title'])}-v{META_PROMPT_SCHEMA_VERSION}-{fingerprint}"
+    )
     job_dir = Path(META_AI_JOBS_DIR) / channel["id"] / job_id
     for subdirectory in ("renders", "continuity", "debug"):
         (job_dir / subdirectory).mkdir(parents=True, exist_ok=True)
 
-    beats = _split_narration(story["script"], META_SCENE_COUNT)
+    scene_plan = _story_scene_plan(story, META_SCENE_COUNT)
+    episode_code = _episode_code(story, channel)
     scenes = []
-    for offset, narration in enumerate(beats):
+    for offset, plan in enumerate(scene_plan):
         index = offset + 1
+        narration = plan["dialogue"]
         scenes.append({
             "index": index,
             "duration_seconds": META_SCENE_DURATION,
             "filename": f"scene_{index:02d}.mp4",
             "narration": narration,
-            "prompt": _scene_prompt(index, narration, story, channel),
+            "action": plan["action"],
+            "end_frame": plan["end_frame"],
+            "clip_id": f"{episode_code}-C{index}",
+            "prompt": _scene_prompt(
+                index, narration, story, channel,
+                scene_plan=plan, episode_code=episode_code,
+            ),
         })
 
     manifest = {
@@ -251,7 +420,8 @@ def create_job(channel: dict, story: dict) -> tuple[dict, Path]:
         "channel_id": channel["id"],
         "channel_name": channel["name"],
         "generator": "Meta AI Create through Playwright, Meta-only",
-        "schema_version": 2,
+        "schema_version": META_PROMPT_SCHEMA_VERSION,
+        "episode_code": episode_code,
         "render_backend": "meta_ai",
         "status": "awaiting_meta_ai",
         "target_duration_seconds": META_SCENE_COUNT * META_SCENE_DURATION,
@@ -297,6 +467,46 @@ def _storage_state_path(*, required: bool = False) -> Path | None:
     return path
 
 
+def _storage_state_slots(*, required: bool = False) -> list[tuple[int, Path]]:
+    """Return configured Meta sessions in primary-to-fallback order.
+
+    META_AI_STORAGE_STATE_FILES is a comma-separated list whose positions are
+    account slots 1–4. Missing optional files are skipped without renumbering.
+    The original single-file variable remains the backwards-compatible primary.
+    """
+    configured = os.getenv("META_AI_STORAGE_STATE_FILES", "").strip()
+    if configured:
+        raw_paths = [part.strip() for part in configured.split(",")]
+    else:
+        primary = META_AI_STORAGE_STATE_FILE.strip()
+        raw_paths = [primary]
+        if primary:
+            primary_path = Path(primary).expanduser()
+            raw_paths.extend(
+                str(primary_path.with_name(
+                    f"{primary_path.stem}_{slot}{primary_path.suffix}"
+                ))
+                for slot in range(2, 5)
+            )
+    slots = []
+    seen = set()
+    for index, raw_path in enumerate(raw_paths[:4], start=1):
+        if not raw_path:
+            continue
+        path = Path(raw_path).expanduser().resolve()
+        if path in seen or not path.is_file():
+            continue
+        seen.add(path)
+        slots.append((index, path))
+    if required and not slots:
+        raise MetaAIAutomationError(
+            "No Meta AI account session file is available. Configure the "
+            "primary META_AI_STORAGE_STATE_FILE or the ordered "
+            "META_AI_STORAGE_STATE_FILES list."
+        )
+    return slots
+
+
 def _load_playwright():
     try:
         from playwright.sync_api import sync_playwright
@@ -308,7 +518,8 @@ def _load_playwright():
     return sync_playwright
 
 
-def _launch_context(playwright, profile_dir: Path | None, *, headless: bool):
+def _launch_context(playwright, profile_dir: Path | None, *, headless: bool,
+                    storage_state_path: Path | None = None):
     launch_kwargs = {
         "headless": headless,
         "args": ["--disable-dev-shm-usage"],
@@ -328,7 +539,7 @@ def _launch_context(playwright, profile_dir: Path | None, *, headless: bool):
         )
         browser = None
     else:
-        state_path = _storage_state_path(required=True)
+        state_path = storage_state_path or _storage_state_path(required=True)
         browser = playwright.chromium.launch(**launch_kwargs)
         context = browser.new_context(
             storage_state=str(state_path),
@@ -1383,7 +1594,7 @@ def _save_media_source(context, page, source: str, target: Path,
         )
     except MetaClipDownloadError as error:
         # The video has ALREADY been generated on Meta. Keep a durable local
-        # marker so the next 8-hour run cannot accidentally spend another
+        # marker so the next 6-hour run cannot accidentally spend another
         # generation just to encounter the same failed export.
         if debug_path is not None:
             marker = debug_path.with_name(debug_path.stem + "_download_pending.json")
@@ -1561,6 +1772,7 @@ def collect_rendered_clips(manifest: dict, job_dir: Path) -> list[str]:
 
 def _ensure_meta_rendered_clips(
     manifest: dict, job_dir: Path, *, isolated_browser: bool = False,
+    storage_state_path: Path | None = None, account_slot: int = 1,
 ) -> list[str]:
     """Render in one isolated Playwright browser per concurrent channel.
 
@@ -1600,13 +1812,19 @@ def _ensure_meta_rendered_clips(
     # Import a saved, signed-in session into a separate, private browser context
     # for each channel instead. This leaves normal Chrome untouched.
     profile_dir = None if isolated_browser else _profile_dir()
-    state_path = _storage_state_path(required=profile_dir is None)
+    state_path = (
+        storage_state_path or _storage_state_path(required=True)
+        if profile_dir is None else None
+    )
     sync_playwright = _load_playwright()
     manifest["status"] = "rendering"
     _save_manifest(manifest, job_dir)
 
     with sync_playwright() as playwright:
-        context, browser = _launch_context(playwright, profile_dir, headless=META_AI_HEADLESS)
+        context, browser = _launch_context(
+            playwright, profile_dir, headless=META_AI_HEADLESS,
+            storage_state_path=state_path,
+        )
         successful_render = False
         project_page = None
         try:
@@ -1663,6 +1881,7 @@ def _ensure_meta_rendered_clips(
                         prior_frame = frame_target
                         successful_render = True
                         scene["rendered"] = True
+                        scene["meta_account_slot"] = account_slot
                         pending_export.unlink(missing_ok=True)
                         _save_manifest(manifest, job_dir)
                         last_error = None
@@ -1736,11 +1955,55 @@ def _ensure_meta_rendered_clips(
 def ensure_rendered_clips(
     manifest: dict, job_dir: Path, *, isolated_browser: bool = False,
 ) -> list[str]:
-    """Meta-only video; isolated_browser safely supports parallel channels."""
+    """Render through up to four isolated Meta sessions in ordered failover."""
     if manifest.get("render_backend") not in (None, "meta_ai"):
         raise MetaAIAutomationError("Non-Meta render backend is prohibited")
-    return _ensure_meta_rendered_clips(
-        manifest, job_dir, isolated_browser=isolated_browser,
+    # A deliberately configured persistent local profile is a single-account
+    # interactive mode. Scheduled/parallel operation always uses state files.
+    if not isolated_browser and _profile_dir() is not None:
+        return _ensure_meta_rendered_clips(
+            manifest, job_dir, isolated_browser=False,
+        )
+
+    slots = _storage_state_slots(required=True)
+    errors = []
+    for position, (slot, state_path) in enumerate(slots):
+        state_key = str(state_path)
+        with _ACCOUNT_FAILURE_LOCK:
+            unavailable = state_key in _UNAVAILABLE_ACCOUNT_STATES
+        if unavailable and position < len(slots) - 1:
+            print(f"[MetaAI] Skipping unavailable account {slot}; trying next account")
+            continue
+        print(f"[MetaAI] Using Meta account {slot}/{max(number for number, _ in slots)}")
+        try:
+            return _ensure_meta_rendered_clips(
+                manifest, job_dir, isolated_browser=isolated_browser,
+                storage_state_path=state_path, account_slot=slot,
+            )
+        except MetaAIDownloadPending:
+            # The video already exists remotely. Another account would generate
+            # a duplicate and spend quota, so manual recovery remains mandatory.
+            raise
+        except MetaAIAutomationError as error:
+            errors.append(f"account {slot}={type(error).__name__}")
+            if isinstance(error, (
+                MetaAILoginRequired,
+                MetaAIEditorUnavailable,
+                MetaAIVideoUnavailable,
+            )):
+                with _ACCOUNT_FAILURE_LOCK:
+                    _UNAVAILABLE_ACCOUNT_STATES.add(state_key)
+            if position < len(slots) - 1:
+                print(
+                    f"[MetaAI] Account {slot} failed with {type(error).__name__}; "
+                    "continuing with the next configured account"
+                )
+                continue
+            print("[MetaAI] All configured Meta accounts failed (" +
+                  ", ".join(errors) + ")")
+            raise
+    raise MetaAIAutomationError(
+        "All configured Meta account sessions are currently unavailable."
     )
 
 

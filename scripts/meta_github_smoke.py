@@ -25,12 +25,15 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from config import CHANNELS, META_AI_JOBS_DIR
 from modules.meta_ai_generator import (
+    MetaAIAutomationError,
+    MetaAIDownloadPending,
     _check_scene_handoff,
     _extract_last_frame,
     _generate_media,
     _launch_context,
     _load_playwright,
     _storage_state_path,
+    _storage_state_slots,
     _validate_meta_clip,
     create_job,
 )
@@ -192,6 +195,7 @@ def run_smoke(scene_count: int, artifact_root: Path) -> bool:
         # No attempt to reuse the normal Windows Chrome process on this runner.
         # The session comes exclusively from the GitHub Actions secret.
         _storage_state_path(required=True)
+        account_slots = _storage_state_slots(required=True)
         channel = next(c for c in CHANNELS if c["id"] == "channel_2")
         if channel.get("media_source") != "meta_ai_browser":
             raise RuntimeError("StoryFuse channel is not configured for Meta-only media")
@@ -202,51 +206,82 @@ def run_smoke(scene_count: int, artifact_root: Path) -> bool:
         stage = "launch_browser"
         sync_playwright = _load_playwright()
         with sync_playwright() as pw:
-            # Storage-state context is mandatory; no persistent Chrome user directory.
-            context, browser = _launch_context(pw, None, headless=False)
-            try:
-                previous_last: Path | None = None
-                clips: list[str] = []
-                for scene in manifest["scenes"][:scene_count]:
-                    number = scene["index"]
-                    stage = f"scene_{number:02d}_generate_download"
-                    target = job_dir / "renders" / scene["filename"]
-                    debug = job_dir / "debug" / f"scene_{number:02d}.png"
-                    print(f"[Smoke] Scene {number}/{scene_count}: generate on Meta then download", flush=True)
-                    # One submission only. If download fails, do not spend quota
-                    # by issuing another generation automatically.
-                    _generate_media(context, scene["prompt"], target, "video", previous_last, debug)
-                    stage = f"scene_{number:02d}_validate"
-                    _validate_meta_clip(target)
-                    if previous_last is not None:
-                        _check_scene_handoff(previous_last, target)
-                    last = job_dir / "continuity" / f"scene_{number:02d}_last.png"
-                    _extract_last_frame(target, last)
-                    previous_last = last
-                    clips.append(str(target))
-                    metadata = _video_metadata(target)
-                    (artifacts / "clips").mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(target, artifacts / "clips" / target.name)
-                    report["scenes"].append({"index": number, "status": "passed", "media": metadata})
-                    _write_status(artifacts, report)
-                    print(f"[Smoke] PASS scene {number}: downloaded and validated, native audio present", flush=True)
-                if scene_count == 5:
-                    stage = "assemble_five_scenes"
-                    assembled = assemble_meta_short(
-                        clip_paths=clips,
-                        output_filename="META_GITHUB_SMOKE_50S.mp4",
-                        continuity_dir=job_dir / "continuity",
-                        scene_seconds=10,
+            previous_last: Path | None = None
+            clips: list[str] = []
+            unavailable_accounts: set[int] = set()
+            for scene in manifest["scenes"][:scene_count]:
+                generated = False
+                account_errors = []
+                for slot, state_path in account_slots:
+                    if slot in unavailable_accounts:
+                        continue
+                    # Every account uses a private context loaded from only its
+                    # own state file. Sessions and cookies are never combined.
+                    context, browser = _launch_context(
+                        pw, None, headless=False,
+                        storage_state_path=state_path,
                     )
-                    (artifacts / "short").mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(assembled, artifacts / "short" / "META_GITHUB_SMOKE_50S.mp4")
-                    report["assembled_video"] = "short/META_GITHUB_SMOKE_50S.mp4"
-            finally:
-                try:
-                    context.close()
-                finally:
-                    if browser is not None:
-                        browser.close()
+                    try:
+                        print(f"[Smoke] Trying Meta account {slot}", flush=True)
+                        number = scene["index"]
+                        stage = f"scene_{number:02d}_generate_download"
+                        target = job_dir / "renders" / scene["filename"]
+                        debug = job_dir / "debug" / f"scene_{number:02d}.png"
+                        print(f"[Smoke] Scene {number}/{scene_count}: generate on Meta then download", flush=True)
+                        # One submission per account. A rendered-but-undownloaded
+                        # scene never falls through to another account.
+                        _generate_media(context, scene["prompt"], target, "video", previous_last, debug)
+                        stage = f"scene_{number:02d}_validate"
+                        _validate_meta_clip(target)
+                        generated = True
+                        break
+                    except MetaAIDownloadPending:
+                        raise
+                    except MetaAIAutomationError as error:
+                        unavailable_accounts.add(slot)
+                        account_errors.append(f"account {slot}={type(error).__name__}")
+                        print(
+                            f"[Smoke] Account {slot} unavailable; trying the next account",
+                            flush=True,
+                        )
+                    finally:
+                        try:
+                            context.close()
+                        finally:
+                            if browser is not None:
+                                browser.close()
+                if not generated:
+                    raise MetaAIAutomationError(
+                        "All configured Meta accounts failed (" +
+                        ", ".join(account_errors) + ")."
+                    )
+
+                number = scene["index"]
+                target = job_dir / "renders" / scene["filename"]
+                if previous_last is not None:
+                    _check_scene_handoff(previous_last, target)
+                last = job_dir / "continuity" / f"scene_{number:02d}_last.png"
+                _extract_last_frame(target, last)
+                previous_last = last
+                clips.append(str(target))
+                metadata = _video_metadata(target)
+                metadata["meta_account_slot"] = slot
+                (artifacts / "clips").mkdir(parents=True, exist_ok=True)
+                shutil.copy2(target, artifacts / "clips" / target.name)
+                report["scenes"].append({"index": number, "status": "passed", "media": metadata})
+                _write_status(artifacts, report)
+                print(f"[Smoke] PASS scene {number}: downloaded and validated, native audio present", flush=True)
+            if scene_count == 5:
+                stage = "assemble_five_scenes"
+                assembled = assemble_meta_short(
+                    clip_paths=clips,
+                    output_filename="META_GITHUB_SMOKE_50S.mp4",
+                    continuity_dir=job_dir / "continuity",
+                    scene_seconds=10,
+                )
+                (artifacts / "short").mkdir(parents=True, exist_ok=True)
+                shutil.copy2(assembled, artifacts / "short" / "META_GITHUB_SMOKE_50S.mp4")
+                report["assembled_video"] = "short/META_GITHUB_SMOKE_50S.mp4"
         report["result"] = "passed"
         print(f"[Smoke] PASS: {scene_count} Meta clip(s) saved; no YouTube upload", flush=True)
         return True

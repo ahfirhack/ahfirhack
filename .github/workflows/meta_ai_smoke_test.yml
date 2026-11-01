@@ -13,7 +13,7 @@ on:
           - "5"
 
 # Share the production workflow's lock so the test does not compete with
-# an eight-hour production run for the same Meta session/quota.
+# a six-hour production run for the same Meta account sessions/quota.
 concurrency:
   group: youtube-automation-persistent-browser
   cancel-in-progress: false
@@ -27,7 +27,8 @@ jobs:
     env:
       # runner.* is unavailable while GitHub parses job-level env. The github
       # context is valid here; neither path is included in the uploaded artifact.
-      META_AI_STORAGE_STATE_FILE: ${{ github.workspace }}/.meta-ai-session/meta-ai-storage-state.json
+      META_AI_STORAGE_STATE_FILE: ${{ github.workspace }}/.meta-ai-session/meta-ai-account-1.json
+      META_AI_STORAGE_STATE_FILES: ${{ github.workspace }}/.meta-ai-session/meta-ai-account-1.json,${{ github.workspace }}/.meta-ai-session/meta-ai-account-2.json,${{ github.workspace }}/.meta-ai-session/meta-ai-account-3.json,${{ github.workspace }}/.meta-ai-session/meta-ai-account-4.json
       META_AI_JOBS_DIR: ${{ github.workspace }}/meta-ai-smoke-jobs
       META_AI_BROWSER_CHANNEL: chromium
       META_AI_HEADLESS: "false"
@@ -64,6 +65,9 @@ jobs:
       - name: Restore Meta session from Actions secret (never upload this file)
         env:
           META_AI_STORAGE_STATE_B64: ${{ secrets.META_AI_STORAGE_STATE_B64 }}
+          META_AI_STORAGE_STATE_2_B64: ${{ secrets.META_AI_STORAGE_STATE_2_B64 }}
+          META_AI_STORAGE_STATE_3_B64: ${{ secrets.META_AI_STORAGE_STATE_3_B64 }}
+          META_AI_STORAGE_STATE_4_B64: ${{ secrets.META_AI_STORAGE_STATE_4_B64 }}
         shell: bash
         run: |
           set -euo pipefail
@@ -73,12 +77,25 @@ jobs:
             exit 1
           fi
           mkdir -p "$(dirname "$META_AI_STORAGE_STATE_FILE")"
-          printf '%s' "$META_AI_STORAGE_STATE_B64" | base64 --decode | gzip -dc > "$META_AI_STORAGE_STATE_FILE"
+          restore_meta_session() {
+            local encoded="$1"
+            local destination="$2"
+            [ -z "$encoded" ] && return 0
+            printf '%s' "$encoded" | base64 --decode | gzip -dc > "$destination"
+          }
+          session_dir="$(dirname "$META_AI_STORAGE_STATE_FILE")"
+          restore_meta_session "$META_AI_STORAGE_STATE_B64" "$session_dir/meta-ai-account-1.json"
+          restore_meta_session "$META_AI_STORAGE_STATE_2_B64" "$session_dir/meta-ai-account-2.json"
+          restore_meta_session "$META_AI_STORAGE_STATE_3_B64" "$session_dir/meta-ai-account-3.json"
+          restore_meta_session "$META_AI_STORAGE_STATE_4_B64" "$session_dir/meta-ai-account-4.json"
           python - <<'PY'
-          import json, os
-          state = json.load(open(os.environ['META_AI_STORAGE_STATE_FILE'], encoding='utf-8'))
-          assert isinstance(state, dict) and isinstance(state.get('cookies'), list), 'Invalid Meta storage state'
-          print('[Smoke] Meta browser session restored (credentials are not printed)')
+          import glob, json, os
+          directory = os.path.dirname(os.environ['META_AI_STORAGE_STATE_FILE'])
+          files = sorted(glob.glob(os.path.join(directory, 'meta-ai-account-*.json')))
+          for path in files:
+              state = json.load(open(path, encoding='utf-8'))
+              assert isinstance(state, dict) and isinstance(state.get('cookies'), list), 'Invalid Meta storage state'
+          print(f'[Smoke] Restored {len(files)} isolated Meta account session(s); credentials are not printed')
           PY
 
       - name: Generate new Meta clip, download and verify (no YouTube upload)

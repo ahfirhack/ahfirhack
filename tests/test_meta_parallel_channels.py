@@ -23,6 +23,63 @@ from modules import meta_ai_generator as meta
 
 
 class ParallelChannelsTests(unittest.TestCase):
+    def test_local_numbered_account_files_are_discovered_automatically(self):
+        with tempfile.TemporaryDirectory() as root:
+            primary = Path(root) / "meta_ai_storage_state.json"
+            third = Path(root) / "meta_ai_storage_state_3.json"
+            primary.write_text("{}")
+            third.write_text("{}")
+            with patch.dict("os.environ", {"META_AI_STORAGE_STATE_FILES": ""}), \
+                 patch.object(meta, "META_AI_STORAGE_STATE_FILE", str(primary)):
+                self.assertEqual(
+                    [(1, primary.resolve()), (3, third.resolve())],
+                    meta._storage_state_slots(required=True),
+                )
+
+    def test_meta_accounts_fail_over_in_primary_then_secondary_order(self):
+        with tempfile.TemporaryDirectory() as root:
+            primary = Path(root) / "account-1.json"
+            secondary = Path(root) / "account-2.json"
+            primary.write_text("{}")
+            secondary.write_text("{}")
+            manifest = {"render_backend": "meta_ai"}
+            with meta._ACCOUNT_FAILURE_LOCK:
+                meta._UNAVAILABLE_ACCOUNT_STATES.clear()
+            with patch.object(meta, "_profile_dir", return_value=None), \
+                 patch.object(meta, "_storage_state_slots", return_value=[
+                     (1, primary), (2, secondary),
+                 ]), \
+                 patch.object(
+                     meta, "_ensure_meta_rendered_clips",
+                     side_effect=[meta.MetaAIVideoUnavailable("quota"), ["scene.mp4"]],
+                 ) as render:
+                result = meta.ensure_rendered_clips(manifest, Path(root), isolated_browser=True)
+            self.assertEqual(["scene.mp4"], result)
+            self.assertEqual(primary, render.call_args_list[0].kwargs["storage_state_path"])
+            self.assertEqual(1, render.call_args_list[0].kwargs["account_slot"])
+            self.assertEqual(secondary, render.call_args_list[1].kwargs["storage_state_path"])
+            self.assertEqual(2, render.call_args_list[1].kwargs["account_slot"])
+
+    def test_download_pending_never_generates_again_on_fallback_account(self):
+        with tempfile.TemporaryDirectory() as root:
+            states = []
+            for number in (1, 2):
+                path = Path(root) / f"account-{number}.json"
+                path.write_text("{}")
+                states.append((number, path))
+            with patch.object(meta, "_profile_dir", return_value=None), \
+                 patch.object(meta, "_storage_state_slots", return_value=states), \
+                 patch.object(
+                     meta, "_ensure_meta_rendered_clips",
+                     side_effect=meta.MetaAIDownloadPending("already rendered"),
+                 ) as render:
+                with self.assertRaises(meta.MetaAIDownloadPending):
+                    meta.ensure_rendered_clips(
+                        {"render_backend": "meta_ai"}, Path(root),
+                        isolated_browser=True,
+                    )
+            self.assertEqual(1, render.call_count)
+
     def test_fanout_is_three_and_fourth_starts_when_a_worker_frees(self):
         barrier = threading.Barrier(3, timeout=5)
         lock = threading.Lock()
@@ -146,9 +203,9 @@ class ParallelChannelsTests(unittest.TestCase):
             with self.subTest(requested=requested), self.assertRaises(ValueError):
                 main._worker_count(requested, 4)
 
-    def test_workflow_enables_three_windows_and_keeps_8_hour_cron(self):
+    def test_workflow_enables_three_windows_and_keeps_6_hour_cron(self):
         text = (Path(__file__).parents[1] / ".github/workflows/daily_upload.yml").read_text()
-        self.assertIn('cron: "13 0,8,16 * * *"', text)
+        self.assertIn('cron: "13 */6 * * *"', text)
         self.assertIn('META_CHANNEL_WORKERS: "3"', text)
         self.assertIn('META_AI_SURFACES: "create"', text)
         self.assertIn('args=(--once --workers 3)', text)

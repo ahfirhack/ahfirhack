@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from config import CHANNELS, META_SCENE_COUNT, META_SCENE_DURATION, UPLOAD_INTERVAL_HOURS
 from modules import meta_ai_generator as meta
+from modules import script_generator
 from modules import video_assembler
 
 
@@ -31,7 +32,7 @@ class MetaOnlyPolicyTests(unittest.TestCase):
         self.assertEqual(4, len(CHANNELS))
         self.assertEqual(5, META_SCENE_COUNT)
         self.assertEqual(10, META_SCENE_DURATION)
-        self.assertEqual(8, UPLOAD_INTERVAL_HOURS)
+        self.assertEqual(6, UPLOAD_INTERVAL_HOURS)
         for channel in CHANNELS:
             with self.subTest(channel=channel["id"]):
                 self.assertEqual("meta_ai_browser", channel["media_source"])
@@ -52,18 +53,53 @@ class MetaOnlyPolicyTests(unittest.TestCase):
                     self.assertEqual("meta_ai", manifest["render_backend"])
                     self.assertTrue(manifest["native_audio"])
                     self.assertEqual(50, manifest["target_duration_seconds"])
-                    self.assertEqual(2, manifest["schema_version"])
+                    self.assertEqual(3, manifest["schema_version"])
+                    self.assertRegex(manifest["episode_code"], r"^[A-Z]{3}-[0-9A-F]{6}$")
                     for index, scene in enumerate(manifest["scenes"], start=1):
                         self.assertEqual(index, scene["index"])
                         self.assertEqual(10, scene["duration_seconds"])
                         self.assertIn("VIDEO GENERATION ONLY", scene["prompt"])
                         self.assertIn("NATIVE", scene["prompt"].upper())
-                        self.assertIn("AUDIO-ONLY DIALOGUE", scene["prompt"])
-                        self.assertIn("NEVER DISPLAY OR CAPTION", scene["prompt"])
+                        self.assertIn(f"SCENE {index}/5", scene["prompt"])
+                        self.assertIn("ABSOLUTE EPISODE TIME", scene["prompt"])
+                        self.assertIn("FIXED VOICE ID", scene["prompt"])
+                        self.assertIn("10-SECOND STORYBOARD", scene["prompt"])
+                        self.assertIn("LOCK LAST FRAME", scene["prompt"])
+                        self.assertIn("STITCH REQUIREMENT", scene["prompt"])
+                        self.assertIn("says EXACTLY", scene["prompt"])
+                        self.assertIn("never display them as text", scene["prompt"])
+                        self.assertTrue(scene["action"])
+                        self.assertTrue(scene["end_frame"])
                         if index > 1:
                             self.assertIn("ATTACHED", scene["prompt"])
-                            self.assertIn("FIRST FRAME", scene["prompt"])
+                            self.assertIn("previous Meta video", scene["prompt"])
                     self.assertIn("\f", (job_dir / "meta_prompts.txt").read_text())
+
+    def test_legacy_story_is_split_on_complete_sentence_boundaries(self):
+        beats = meta._split_narration(STORY["script"], 5)
+        self.assertEqual(5, len(beats))
+        self.assertTrue(all(beat.endswith((".", "!", "?")) for beat in beats))
+        self.assertEqual(STORY["script"], " ".join(beats))
+
+    def test_text_generator_requires_five_precise_production_rows(self):
+        prompt = script_generator._build_prompt("cinematic storytelling", "seed")
+        self.assertIn("scene_plan with EXACTLY five rows", prompt)
+        self.assertIn("dialogue", prompt)
+        self.assertIn("action", prompt)
+        self.assertIn("end_frame", prompt)
+        valid = {
+            "scene_plan": [
+                {
+                    "dialogue": f"The lead completes precise action number {index} now.",
+                    "action": f"The lead moves prop number {index} toward the marked doorway.",
+                    "end_frame": f"Lead left, prop {index} centered, doorway visible behind them.",
+                }
+                for index in range(1, 6)
+            ]
+        }
+        self.assertEqual(5, len(script_generator._normalized_scene_plan(valid)))
+        valid["scene_plan"][2]["action"] = "vague"
+        self.assertIsNone(script_generator._normalized_scene_plan(valid))
 
     def test_expired_or_quota_limited_meta_never_switches_to_image_fallback(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -129,9 +165,18 @@ class MetaOnlyPolicyTests(unittest.TestCase):
             with patch.object(meta, "META_AI_JOBS_DIR", temp):
                 self.assertIsNone(meta.find_active_job("channel_3"))
 
-    def test_workflow_is_every_eight_hours_and_has_no_stock_secrets(self):
+    def test_workflow_is_every_six_hours_all_channels_and_has_no_stock_secrets(self):
         workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/daily_upload.yml").read_text()
-        self.assertIn('cron: "13 0,8,16 * * *"', workflow)
+        self.assertIn('cron: "13 */6 * * *"', workflow)
+        self.assertIn("${{ inputs.channel || 'all' }}", workflow)
+        for secret in (
+            "META_AI_STORAGE_STATE_B64",
+            "META_AI_STORAGE_STATE_2_B64",
+            "META_AI_STORAGE_STATE_3_B64",
+            "META_AI_STORAGE_STATE_4_B64",
+        ):
+            self.assertIn(secret, workflow)
+        self.assertIn("META_AI_STORAGE_STATE_FILES", workflow)
         self.assertIn('AI_HORDE_ENABLED: "false"', workflow)
         for forbidden in ("PEXELS_API_KEY", "PIXABAY_API_KEY", "ELEVENLABS_API_KEY", "DEEPGRAM_API_KEY"):
             self.assertNotIn(forbidden, workflow)

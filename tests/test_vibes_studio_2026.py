@@ -8,6 +8,12 @@ from modules import meta_ai_generator as meta
 import switch_meta_account as auth
 
 class StudioTests(unittest.TestCase):
+    def test_four_account_slots_have_isolated_files_and_secrets(self):
+        self.assertEqual(auth.STATE_PATH, auth._slot_state_path(1))
+        self.assertEqual("meta_ai_storage_state_2.json", auth._slot_state_path(2).name)
+        self.assertEqual("META_AI_STORAGE_STATE_B64", auth._slot_secret_name(1))
+        self.assertEqual("META_AI_STORAGE_STATE_4_B64", auth._slot_secret_name(4))
+
     def test_create_is_the_only_production_default_and_studio_is_verified(self):
         with patch.dict('os.environ', {}, clear=True):
             self.assertEqual(meta._meta_surface_order(), ['create'])

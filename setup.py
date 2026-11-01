@@ -248,9 +248,9 @@ def main():
     print("  2. git add .")
     print('  3. git commit -m "Add 4-channel YouTube bot"')
     print("  4. git push")
-    print("  5. Repo -> Actions -> YouTube Upload (Meta AI Only Every 8 Hours) -> Run workflow")
-    print("\nRuns at 00:13, 08:13 and 16:13 UTC: up to 12 Shorts/day.")
-    print("Publish META_AI_STORAGE_STATE_B64 with switch_meta_account.py.")
+    print("  5. Repo -> Actions -> YouTube Upload (Meta AI Only Every 6 Hours) -> Run workflow")
+    print("\nRuns at 00:13, 06:13, 12:13 and 18:13 UTC: up to 16 Shorts/day.")
+    print("Publish Meta account slot 1 with switch_meta_account.py; add --slot 2, 3 and 4 for failover.")
 
 
 if __name__ == "__main__":
