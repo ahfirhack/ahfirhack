@@ -101,6 +101,11 @@ class MetaOnlyPolicyTests(unittest.TestCase):
         valid["scene_plan"][2]["action"] = "vague"
         self.assertIsNone(script_generator._normalized_scene_plan(valid))
 
+    def test_health_check_has_no_legacy_stock_visual_requirement(self):
+        source = Path("check_script_generators.py").read_text(encoding="utf-8")
+        self.assertIn("result['scene_plan']", source)
+        self.assertNotIn("result['visual_queries']", source)
+
     def test_expired_or_quota_limited_meta_never_switches_to_image_fallback(self):
         with tempfile.TemporaryDirectory() as temp:
             manifest = {"render_backend": "meta_ai"}

@@ -61,7 +61,7 @@ def main() -> None:
                 print(
                     f"[Health] {channel['id']} OK: "
                     f"{len(result['script'].split())} words, "
-                    f"{len(result['visual_queries'])} visual beats"
+                    f"{len(result['scene_plan'])} Meta production rows"
                 )
                 last_error = None
                 break
