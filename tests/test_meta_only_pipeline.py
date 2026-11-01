@@ -174,6 +174,7 @@ class MetaOnlyPolicyTests(unittest.TestCase):
             "META_AI_STORAGE_STATE_2_B64",
             "META_AI_STORAGE_STATE_3_B64",
             "META_AI_STORAGE_STATE_4_B64",
+            "META_AI_STORAGE_STATE_5_B64",
         ):
             self.assertIn(secret, workflow)
         self.assertIn("META_AI_STORAGE_STATE_FILES", workflow)

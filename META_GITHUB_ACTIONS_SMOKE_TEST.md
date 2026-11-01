@@ -4,7 +4,7 @@ This is a **manually triggered**, standalone smoke test for your existing Meta-o
 
 ## Modes
 
-- **1 scene (default)**: Launch Playwright on a GitHub-hosted Ubuntu runner, restore the ordered Meta sessions (slot 1 from `META_AI_STORAGE_STATE_B64`, plus any configured slots 2–4), open **Meta Create only**, submit a new original StoryFuse scene prompt, wait for completion, **download the actual video**, and verify its 10-second duration, 9:16-ish portrait orientation, video track, native audio track, and true 1080p-or-higher source resolution. Includes the downloaded MP4 in Actions artifacts on success. Does not assemble an incomplete Short and never falls back to Vibes Studio.
+- **1 scene (default)**: Launch Playwright on a GitHub-hosted Ubuntu runner, restore the ordered Meta sessions (slot 1 from `META_AI_STORAGE_STATE_B64`, plus any configured slots 2–5), open **Meta Create only**, submit a new original StoryFuse scene prompt, wait for completion, **download the actual video**, and verify its 10-second duration, 9:16-ish portrait orientation, video track, native audio track, and true 1080p-or-higher source resolution. Includes the downloaded MP4 in Actions artifacts on success. Does not assemble an incomplete Short and never falls back to Vibes Studio.
 - **5 scenes**: Do the above five times, attaching the actual last frame from the preceding Meta clip, validate continuity, and assemble one 50-second Short using the existing FFmpeg assembler. Adds `META_GITHUB_SMOKE_50S.mp4` to the workflow artifact. This costs up to five Meta generations and is intended **only after mode 1 passes**.
 
 Both modes use an isolated fresh job and do not consume your prompt-reserve queues. Neither mode reads YouTube credentials or sends a YouTube upload. No third-party stock media, separate voice-over, or image generation is used.
@@ -25,8 +25,8 @@ python -m unittest discover -s tests -p test_meta_github_smoke.py -v
 python switch_meta_account.py --publish-only --repo YOUR_OWNER/YOUR_REPO
 ```
 
-Optional failover accounts are published separately with `--slot 2`, `--slot 3`
-and `--slot 4`. The smoke test and production workflow always try slot 1 first.
+Optional failover accounts are published separately with `--slot 2`, `--slot 3`,
+`--slot 4` and `--slot 5`. The smoke test and production workflow always try slot 1 first.
 
 `YOUR_OWNER/YOUR_REPO` means the **actual repository that runs this automation**. If your browser session has expired or your Meta account requires verification on a cloud runner, you must re-authenticate and re-export the session. Cloud Actions cannot attach to Chrome running on your local Windows machine.
 

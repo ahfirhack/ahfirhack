@@ -27,12 +27,18 @@ class ParallelChannelsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             primary = Path(root) / "meta_ai_storage_state.json"
             third = Path(root) / "meta_ai_storage_state_3.json"
+            fifth = Path(root) / "meta_ai_storage_state_5.json"
             primary.write_text("{}")
             third.write_text("{}")
+            fifth.write_text("{}")
             with patch.dict("os.environ", {"META_AI_STORAGE_STATE_FILES": ""}), \
                  patch.object(meta, "META_AI_STORAGE_STATE_FILE", str(primary)):
                 self.assertEqual(
-                    [(1, primary.resolve()), (3, third.resolve())],
+                    [
+                        (1, primary.resolve()),
+                        (3, third.resolve()),
+                        (5, fifth.resolve()),
+                    ],
                     meta._storage_state_slots(required=True),
                 )
 

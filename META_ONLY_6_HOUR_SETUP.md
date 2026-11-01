@@ -47,7 +47,7 @@
    This updates the GitHub Actions secret `META_AI_STORAGE_STATE_B64`. **Do not commit session JSON, cookies, tokens or browser profile files.**
 
    To enable automatic account failover, repeat the import and publication for
-   three different accounts using `--slot 2`, `--slot 3` and `--slot 4` as
+   four different accounts using `--slot 2`, `--slot 3`, `--slot 4` and `--slot 5` as
    documented in `META_ACCOUNT_SWITCH.md`. Slot 1 remains the primary account.
 
 5. Push the updated project code and workflows to the repository's default branch:

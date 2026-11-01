@@ -24,7 +24,7 @@ python test_pipeline.py 2
 python main.py --once --channel 2
 ```
 
-Up to four isolated Meta sessions are supported. The current account is slot 1
-and remains primary; see `META_ACCOUNT_SWITCH.md` to add fallback slots 2–4.
+Up to five isolated Meta sessions are supported. The current account is slot 1
+and remains primary; see `META_ACCOUNT_SWITCH.md` to add fallback slots 2–5.
 
 The last command **uploads** to StoryFuse if all five Meta scenes pass. The preview command does not upload.

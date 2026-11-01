@@ -34,6 +34,7 @@ PROJECT_DIR = Path(__file__).resolve().parent
 PROFILE_ROOT = PROJECT_DIR / ".meta-ai-profile"  # already excluded by .gitignore
 STATE_PATH = PROJECT_DIR / "meta_ai_storage_state.json"  # excluded by .gitignore
 SECRET_NAME = "META_AI_STORAGE_STATE_B64"
+MAX_ACCOUNT_SLOT = 5
 
 
 def _slot_state_path(slot: int) -> Path:
@@ -368,7 +369,7 @@ def main() -> int:
         "--repo", help="Exact GitHub destination as OWNER/REPO (required for publishing)."
     )
     parser.add_argument(
-        "--slot", type=int, choices=(1, 2, 3, 4), default=1,
+        "--slot", type=int, choices=range(1, MAX_ACCOUNT_SLOT + 1), default=1,
         help="Ordered Meta account slot; 1 is the primary account (default: 1).",
     )
     args = parser.parse_args()

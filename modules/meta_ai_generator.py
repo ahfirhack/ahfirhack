@@ -102,6 +102,7 @@ NEGATIVE_LOCK = (
 MIN_META_SOURCE_WIDTH = 1080
 MIN_META_SOURCE_HEIGHT = 1920
 META_PROMPT_SCHEMA_VERSION = 3
+MAX_META_ACCOUNT_SLOTS = 5
 
 _EPISODE_PREFIXES = {
     "channel_1": "SCF",
@@ -471,7 +472,7 @@ def _storage_state_slots(*, required: bool = False) -> list[tuple[int, Path]]:
     """Return configured Meta sessions in primary-to-fallback order.
 
     META_AI_STORAGE_STATE_FILES is a comma-separated list whose positions are
-    account slots 1–4. Missing optional files are skipped without renumbering.
+    account slots 1–5. Missing optional files are skipped without renumbering.
     The original single-file variable remains the backwards-compatible primary.
     """
     configured = os.getenv("META_AI_STORAGE_STATE_FILES", "").strip()
@@ -486,11 +487,13 @@ def _storage_state_slots(*, required: bool = False) -> list[tuple[int, Path]]:
                 str(primary_path.with_name(
                     f"{primary_path.stem}_{slot}{primary_path.suffix}"
                 ))
-                for slot in range(2, 5)
+                for slot in range(2, MAX_META_ACCOUNT_SLOTS + 1)
             )
     slots = []
     seen = set()
-    for index, raw_path in enumerate(raw_paths[:4], start=1):
+    for index, raw_path in enumerate(
+        raw_paths[:MAX_META_ACCOUNT_SLOTS], start=1,
+    ):
         if not raw_path:
             continue
         path = Path(raw_path).expanduser().resolve()
@@ -1955,7 +1958,7 @@ def _ensure_meta_rendered_clips(
 def ensure_rendered_clips(
     manifest: dict, job_dir: Path, *, isolated_browser: bool = False,
 ) -> list[str]:
-    """Render through up to four isolated Meta sessions in ordered failover."""
+    """Render through up to five isolated Meta sessions in ordered failover."""
     if manifest.get("render_backend") not in (None, "meta_ai"):
         raise MetaAIAutomationError("Non-Meta render backend is prohibited")
     # A deliberately configured persistent local profile is a single-account
