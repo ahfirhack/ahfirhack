@@ -417,7 +417,9 @@ def _reject_generic_title(title: str, niche_key: str) -> bool:
     return (
         not normalized
         or normalized in GENERIC_TITLES.get(niche_key, set())
-        or not 4 <= word_count <= 12
+        # Short cinematic titles such as "Hidden Passenger" are valid. The
+        # former four-word minimum discarded otherwise complete scene plans.
+        or not 2 <= word_count <= 12
         or len(str(title).strip()) >= 60
     )
 

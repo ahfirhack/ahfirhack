@@ -79,6 +79,14 @@ class PaidScriptProviderTests(unittest.TestCase):
         provider.assert_called_once()
         self.assertTrue(scripts._provider_is_cooling_down("Broken Provider"))
 
+    def test_specific_short_title_is_not_discarded(self):
+        self.assertFalse(
+            scripts._reject_generic_title("Hidden Passenger", "storytelling")
+        )
+        self.assertTrue(
+            scripts._reject_generic_title("What Happened Next", "storytelling")
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
