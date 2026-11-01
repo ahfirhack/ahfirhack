@@ -2150,6 +2150,8 @@ def _normalized_frames_filter() -> str:
 def _extract_last_frame(video_path: Path, frame_path: Path) -> None:
     """Save the ACTUAL last frame of the first 10 seconds, not -0.15s."""
     frame_path.parent.mkdir(parents=True, exist_ok=True)
+    if _derived_frame_is_fresh(video_path, frame_path):
+        return
     completed = subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error", "-i", str(video_path),
         "-map", "0:v:0", "-an", "-vf", _normalized_frames_filter(),
@@ -2157,6 +2159,16 @@ def _extract_last_frame(video_path: Path, frame_path: Path) -> None:
     ], capture_output=True, text=True, timeout=180)
     if completed.returncode != 0 or not frame_path.is_file() or frame_path.stat().st_size < 1000:
         raise MetaAIAutomationError("Cannot extract the exact Meta scene final frame")
+
+
+def _derived_frame_is_fresh(video_path: Path, frame_path: Path) -> bool:
+    """Reuse QA frames only while they still derive from the current video."""
+    try:
+        frame_stat = frame_path.stat()
+        video_stat = video_path.stat()
+    except OSError:
+        return False
+    return frame_stat.st_size >= 1000 and frame_stat.st_mtime_ns >= video_stat.st_mtime_ns
 
 
 def _check_scene_handoff(previous_last: Path, new_scene: Path) -> float:
@@ -2173,13 +2185,14 @@ def _check_scene_handoff(previous_last: Path, new_scene: Path) -> float:
         raise MetaAIAutomationError("Pillow required for scene handoff QA") from error
     first = new_scene.parent.parent / "continuity" / f"{new_scene.stem}_first.png"
     first.parent.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run([
-        "ffmpeg", "-y", "-loglevel", "error", "-i", str(new_scene),
-        "-map", "0:v:0", "-an", "-vf", _normalized_frames_filter(),
-        "-frames:v", "1", str(first)
-    ], capture_output=True, text=True, timeout=120)
-    if result.returncode != 0 or not first.is_file():
-        raise MetaAIAutomationError("Cannot inspect the next scene's first frame")
+    if not _derived_frame_is_fresh(new_scene, first):
+        result = subprocess.run([
+            "ffmpeg", "-y", "-loglevel", "error", "-i", str(new_scene),
+            "-map", "0:v:0", "-an", "-vf", _normalized_frames_filter(),
+            "-frames:v", "1", str(first)
+        ], capture_output=True, text=True, timeout=120)
+        if result.returncode != 0 or not first.is_file():
+            raise MetaAIAutomationError("Cannot inspect the next scene's first frame")
     with Image.open(previous_last) as previous_img, Image.open(first) as first_img:
         thumb_size = (180, 320)
         a = previous_img.convert("RGB").resize(thumb_size)
@@ -2430,6 +2443,7 @@ def ensure_rendered_clips(
     errors: list[str] = []
     attempted: set[str] = set()
     last_error: MetaAIAutomationError | None = None
+    last_actionable_error: MetaAIAutomationError | None = None
     highest_slot = max(number for number, _ in slots)
     while True:
         selected: tuple[int, Path, str] | None = None
@@ -2471,6 +2485,8 @@ def ensure_rendered_clips(
         except MetaAIAutomationError as error:
             attempted.add(state_key)
             last_error = error
+            if not isinstance(error, MetaAIVideoUnavailable):
+                last_actionable_error = error
             errors.append(f"account {slot}={type(error).__name__}")
             if isinstance(error, (
                 MetaAILoginRequired,
@@ -2491,6 +2507,8 @@ def ensure_rendered_clips(
     if errors:
         print("[MetaAI] All configured Meta accounts failed (" +
               ", ".join(errors) + ")")
+    if last_actionable_error is not None:
+        raise last_actionable_error
     if last_error is not None:
         raise last_error
     raise MetaAIAutomationError(

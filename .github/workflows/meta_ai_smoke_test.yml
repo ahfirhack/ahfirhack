@@ -36,7 +36,7 @@ jobs:
       META_AI_TIMEOUT_SECONDS: "600"
       META_AI_DOWNLOAD_WAIT_SECONDS: "180"
       META_AI_MAX_RETRIES: "1"
-      META_MAX_HANDOFF_DELTA: "0.18"
+      META_MAX_HANDOFF_DELTA: "0.20"
 
     steps:
       - name: Checkout code

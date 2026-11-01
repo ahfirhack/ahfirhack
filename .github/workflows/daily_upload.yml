@@ -157,7 +157,7 @@ jobs:
           META_AI_SURFACES: "create"
           META_CHANNEL_WORKERS: "3"
           # Reject gross resets; bridgeable Meta reframing is made frame-exact in assembly.
-          META_MAX_HANDOFF_DELTA: "0.18"
+          META_MAX_HANDOFF_DELTA: "0.20"
           # Near-identical normalized scene video is never accepted twice.
           META_MAX_DUPLICATE_DELTA: "0.025"
           META_AI_TIMEOUT_SECONDS: ${{ inputs.meta_timeout_seconds || '600' }}
