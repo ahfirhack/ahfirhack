@@ -14,6 +14,16 @@ from scripts import meta_github_smoke as smoke
 
 
 class GitHubSmokeTests(unittest.TestCase):
+    def test_workflow_job_env_uses_dispatch_supported_context(self):
+        workflow = (
+            Path(__file__).parents[1] / ".github" / "workflows" /
+            "meta_ai_smoke_test.yml"
+        ).read_text(encoding="utf-8")
+        job_header = workflow.split("    steps:", 1)[0]
+        self.assertNotIn("runner.temp", job_header)
+        self.assertIn("${{ github.workspace }}/.meta-ai-session/", job_header)
+        self.assertIn("mkdir -p", workflow)
+
     def test_prompt_has_five_beats_and_no_user_secrets(self):
         from modules.meta_ai_generator import _split_narration
         beats = _split_narration(smoke.STORY, 5)

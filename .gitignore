@@ -21,8 +21,10 @@ meta_ai_diagnostics/
 !.env.example
 meta_ai_storage_state.json
 .meta-ai-profile/
+.meta-ai-session/
 meta_ai_jobs/
 meta_ai_diagnostics/
+meta-ai-smoke-jobs/
 pre_parallel_backup/
 *.mp4
 *.webm

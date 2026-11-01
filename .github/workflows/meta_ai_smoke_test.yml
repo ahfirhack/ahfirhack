@@ -25,8 +25,10 @@ jobs:
     permissions:
       contents: read
     env:
-      META_AI_STORAGE_STATE_FILE: ${{ runner.temp }}/meta-ai-storage-state.json
-      META_AI_JOBS_DIR: ${{ runner.temp }}/meta-ai-smoke-jobs
+      # runner.* is unavailable while GitHub parses job-level env. The github
+      # context is valid here; neither path is included in the uploaded artifact.
+      META_AI_STORAGE_STATE_FILE: ${{ github.workspace }}/.meta-ai-session/meta-ai-storage-state.json
+      META_AI_JOBS_DIR: ${{ github.workspace }}/meta-ai-smoke-jobs
       META_AI_BROWSER_CHANNEL: chromium
       META_AI_HEADLESS: "false"
       META_AI_SURFACES: "create"
@@ -70,6 +72,7 @@ jobs:
             echo "Missing repository secret META_AI_STORAGE_STATE_B64. Import your Meta Chrome login and publish the session before running this workflow."
             exit 1
           fi
+          mkdir -p "$(dirname "$META_AI_STORAGE_STATE_FILE")"
           printf '%s' "$META_AI_STORAGE_STATE_B64" | base64 --decode | gzip -dc > "$META_AI_STORAGE_STATE_FILE"
           python - <<'PY'
           import json, os
