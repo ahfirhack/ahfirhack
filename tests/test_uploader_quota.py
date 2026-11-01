@@ -7,6 +7,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from google.auth.exceptions import RefreshError
+
 from modules import uploader
 
 
@@ -22,6 +24,26 @@ CHANNEL = {
 
 
 class UploadReceiptTests(unittest.TestCase):
+    def test_disabled_oauth_client_has_actionable_error(self):
+        creds = MagicMock()
+        creds.valid = False
+        creds.expired = True
+        creds.refresh_token = "refresh-token"
+        creds.refresh.side_effect = RefreshError(
+            "disabled_client: The OAuth client was disabled."
+        )
+        with (
+            patch.object(uploader.os.path, "exists", return_value=True),
+            patch.object(uploader.pickle, "load", return_value=creds),
+            patch("builtins.open", MagicMock()),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "Re-enable that OAuth 2.0 client",
+            ):
+                uploader._get_authenticated_service(
+                    "channel1-secrets.json", "channel1-token.json", "Silicon Crime Files"
+                )
+
     def test_recorded_upload_returns_without_youtube_api_call(self):
         with tempfile.TemporaryDirectory() as temp:
             ledger = Path(temp) / "uploaded_titles.json"

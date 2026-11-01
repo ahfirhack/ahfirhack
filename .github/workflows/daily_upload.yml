@@ -181,6 +181,7 @@ jobs:
             meta_ai_jobs/**/debug/*.png
             meta_ai_jobs/**/manifest.json
             meta_ai_jobs/**/meta_prompts.txt
+            output_videos/*.mp4
           if-no-files-found: ignore
           retention-days: 2
 

@@ -14,6 +14,7 @@ import threading
 import time
 from pathlib import Path
 import httplib2
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google_auth_httplib2 import AuthorizedHttp
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -93,7 +94,25 @@ def _get_authenticated_service(client_secrets_file: str, token_file: str, channe
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             print(f"[Uploader] Refreshing token for {channel_name}...")
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except RefreshError as error:
+                if "disabled_client" in str(error).lower():
+                    slot_match = re.search(r"channel(\d+)", token_file, re.IGNORECASE)
+                    slot = slot_match.group(1) if slot_match else "N"
+                    auth_command = (
+                        f"python auth_tokens.py {slot}"
+                        if slot != "N" else "python auth_tokens.py <channel-number>"
+                    )
+                    raise RuntimeError(
+                        f"YouTube OAuth client is disabled for {channel_name}. "
+                        "Re-enable that OAuth 2.0 client in Google Cloud, or create "
+                        f"a replacement client, run `{auth_command}` locally, then "
+                        f"republish CHANNEL{slot}_SECRETS_B64 and CHANNEL{slot}_TOKEN_B64. "
+                        "The completed Meta video job remains cached and will not "
+                        "be regenerated."
+                    ) from error
+                raise
         else:
             print(f"\n{'='*60}")
             print(f"  ACTION REQUIRED: {channel_name}")
