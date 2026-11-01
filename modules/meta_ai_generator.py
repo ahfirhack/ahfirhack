@@ -105,6 +105,10 @@ MIN_META_SOURCE_HEIGHT = 1280
 META_PROMPT_POLICY_VERSION = 3
 META_PROMPT_SCHEMA_VERSION = 4
 MAX_META_ACCOUNT_SLOTS = 5
+# Below this, Meta's generated opening is already close enough that the output
+# seam correction is effectively invisible.  Larger accepted deltas still use
+# the same short derived-frame bridge; META_MAX_HANDOFF_DELTA rejects resets.
+META_DIRECT_HANDOFF_DELTA = 0.06
 
 _EPISODE_PREFIXES = {
     "channel_1": "SCF",
@@ -2159,8 +2163,9 @@ def _check_scene_handoff(previous_last: Path, new_scene: Path) -> float:
     """Detect a major scene reset before a video could be published.
 
     An actual image reference is mandatory AND the first frame must roughly
-    resemble it. Pixel-exact first frame is enforced later by FFmpeg assembly.
-    This guard rejects obvious resets; it is NOT a semantic continuity proof.
+    resemble it. Pixel-exact first frame and a short motion bridge are enforced
+    later by FFmpeg assembly. This guard rejects obvious resets; it is NOT a
+    semantic continuity proof.
     """
     try:
         from PIL import Image, ImageChops, ImageStat
@@ -2182,9 +2187,14 @@ def _check_scene_handoff(previous_last: Path, new_scene: Path) -> float:
         delta = sum(ImageStat.Stat(ImageChops.difference(a, b)).mean) / (3 * 255)
     if delta > META_MAX_HANDOFF_DELTA:
         raise MetaAIAutomationError(
-            f"Scene visibly reset instead of using previous final frame "
+            f"Scene has an unbridgeable visual reset from the previous final frame "
             f"(mean pixel difference {delta:.3f} > {META_MAX_HANDOFF_DELTA:.3f}); regenerate"
         )
+    label = "direct" if delta <= META_DIRECT_HANDOFF_DELTA else "smoothed"
+    print(
+        f"[MetaAI] Handoff accepted for {new_scene.name}: delta {delta:.3f} "
+        f"({label}, maximum {META_MAX_HANDOFF_DELTA:.3f})"
+    )
     return delta
 
 

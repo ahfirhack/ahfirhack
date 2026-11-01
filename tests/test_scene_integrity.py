@@ -69,9 +69,12 @@ class SceneIntegrityTests(unittest.TestCase):
                 )
 
             self.assertTrue(Path(output).is_file())
-            self.assertEqual(5, captured["args"].count("-i"))
+            self.assertEqual(9, captured["args"].count("-i"))
             graph = captured["args"][captured["args"].index("-filter_complex") + 1]
             self.assertNotIn("overlay=", graph)
+            self.assertEqual(4, graph.count(
+                "xfade=transition=fade:duration=0.25:offset=0"
+            ))
             self.assertNotIn("pad_dur=0.2", graph)
             self.assertIn("atempo=0.917431193", graph)
             self.assertIn("pad_dur=0.03", graph)

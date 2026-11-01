@@ -1,8 +1,9 @@
 """Offline FFmpeg assembler for five genuine Meta AI native-audio videos.
 
-Does not download pictures, footage, audio, fonts or other resources. Scene
-continuity must be present in the generated clips themselves; the assembler
-never hides a bad handoff by replacing one frame or padding audio with silence.
+Does not download pictures, footage, audio, fonts or other resources. Every
+handoff image is extracted from the preceding Meta clip itself. Gross visual
+resets fail before assembly; bridgeable Meta reframing is smoothed without
+inserting time, silence, black frames or outside media.
 """
 
 import json
@@ -12,6 +13,7 @@ from config import OUTPUT_DIR, VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_CRF
 
 WIDTH = VIDEO_WIDTH
 HEIGHT = VIDEO_HEIGHT
+HANDOFF_BLEND_SECONDS = 0.25
 
 
 def _ffmpeg(args, label=""):
@@ -90,11 +92,12 @@ def assemble_meta_short(
 ) -> str:
     """Assemble EXACTLY five native-audio Meta clips into one continuous Short.
 
-    Generated frame handoffs are validated before assembly, then preserved
-    exactly. A bad boundary fails closed instead of being concealed for one
-    frame. If Meta's native audio track ends slightly early, only its final
-    two-second reaction/ambience tail is time-fitted to the video. Dialogue
-    timing stays intact and the former 0.2-second silent seam is eliminated.
+    Generated frame handoffs are validated before assembly. Scene N's actual
+    last frame becomes scene N+1's exact first frame, then dissolves into the
+    genuine Meta motion over 0.25 seconds. This replaces no duration and avoids
+    the one-frame jump caused by the former frame-only overlay. If Meta's native
+    audio track ends slightly early, only its final two-second reaction/ambience
+    tail is time-fitted. Dialogue timing remains intact.
 
     No third-party images, footage, overlays, soundtrack, subtitles, silence
     insertion, stock video or TTS is used.
@@ -122,12 +125,14 @@ def assemble_meta_short(
     clips = [Path(item) for item in clip_paths]
     accepted = []
     previous_frame = None
+    handoff_frames = []
     audio_durations = []
     for index, clip in enumerate(clips, start=1):
         _validate_meta_clip(clip)
         _check_scene_unique(accepted, clip)
         if previous_frame is not None:
             _check_scene_handoff(previous_frame, clip)
+            handoff_frames.append(previous_frame)
         frame = target_dir / f"scene_{index:02d}_assembler_last.png"
         _extract_last_frame(clip, frame)
         previous_frame = frame
@@ -139,18 +144,37 @@ def assemble_meta_short(
     input_args = []
     for path in clips:
         input_args += ["-i", str(path)]
+    for frame in handoff_frames:
+        input_args += [
+            "-loop", "1", "-framerate", "30", "-t", "10", "-i", str(frame),
+        ]
 
     filters = []
     segments = []
     for index in range(5):
         # fps before trim produces exactly 300 pictures (0..299), timestamps
         # start at zero so ffmpeg concat cannot introduce a blank scene gap.
-        v = f"v{index}"
+        base = f"v{index}base"
         filters.append(
             f"[{index}:v]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
             f"crop={WIDTH}:{HEIGHT},setsar=1,fps=30,trim=duration=10,"
-            f"setpts=PTS-STARTPTS,format=yuv420p[{v}]"
+            f"setpts=PTS-STARTPTS,format=yuv420p[{base}]"
         )
+        v = f"v{index}"
+        if index == 0:
+            filters.append(f"[{base}]null[{v}]")
+        else:
+            still = f"v{index}handoff"
+            image_input = 5 + index - 1
+            filters.extend((
+                f"[{image_input}:v]scale={WIDTH}:{HEIGHT}:"
+                f"force_original_aspect_ratio=increase,crop={WIDTH}:{HEIGHT},"
+                f"setsar=1,fps=30,trim=duration=10,setpts=PTS-STARTPTS,"
+                f"format=yuv420p[{still}]",
+                f"[{still}][{base}]xfade=transition=fade:"
+                f"duration={HANDOFF_BLEND_SECONDS}:offset=0,trim=duration=10,"
+                f"setpts=PTS-STARTPTS,format=yuv420p[{v}]",
+            ))
         a = f"a{index}"
         source_audio_seconds = audio_durations[index]
         audio_base = (

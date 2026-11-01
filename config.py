@@ -84,7 +84,10 @@ META_AI_MAX_RETRIES = int(os.getenv("META_AI_MAX_RETRIES", "4"))
 META_SCENE_COUNT = 5
 META_SCENE_DURATION = 10
 META_SCENE_FPS = 30
-META_MAX_HANDOFF_DELTA = float(os.getenv("META_MAX_HANDOFF_DELTA", "0.06"))
+# Meta image-to-video commonly reframes the supplied PNG slightly even when it
+# preserves the same subject and set.  Deltas above this still indicate a gross
+# reset; accepted boundaries are made frame-exact and smoothed by the assembler.
+META_MAX_HANDOFF_DELTA = float(os.getenv("META_MAX_HANDOFF_DELTA", "0.18"))
 META_MAX_DUPLICATE_DELTA = float(os.getenv("META_MAX_DUPLICATE_DELTA", "0.025"))
 
 
