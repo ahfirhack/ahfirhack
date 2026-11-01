@@ -53,7 +53,7 @@ class MetaOnlyPolicyTests(unittest.TestCase):
                     self.assertEqual("meta_ai", manifest["render_backend"])
                     self.assertTrue(manifest["native_audio"])
                     self.assertEqual(50, manifest["target_duration_seconds"])
-                    self.assertEqual(3, manifest["schema_version"])
+                    self.assertEqual(4, manifest["schema_version"])
                     self.assertRegex(manifest["episode_code"], r"^[A-Z]{3}-[0-9A-F]{6}$")
                     for index, scene in enumerate(manifest["scenes"], start=1):
                         self.assertEqual(index, scene["index"])
@@ -138,11 +138,11 @@ class MetaOnlyPolicyTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "exactly five"):
                 video_assembler.assemble_meta_short([], "empty.mp4", Path(temp))
 
-    def test_meta_source_and_final_master_enforce_true_1080p_minimum(self):
+    def test_meta_source_accepts_720p_and_final_master_stays_above_1080p(self):
         self.assertGreaterEqual(video_assembler.WIDTH, 1080)
         self.assertGreaterEqual(video_assembler.HEIGHT, 1920)
         with tempfile.TemporaryDirectory() as temp:
-            clip = Path(temp) / "low-resolution.mp4"
+            clip = Path(temp) / "native-720p.mp4"
             clip.write_bytes(b"v" * 12_000)
             probe = {
                 "format": {"duration": "10.0"},
@@ -152,7 +152,11 @@ class MetaOnlyPolicyTests(unittest.TestCase):
                 ],
             }
             with patch.object(meta, "_probe_video", return_value=probe):
-                with self.assertRaisesRegex(meta.MetaAIAutomationError, "below the required 1080x1920"):
+                meta._validate_meta_clip(clip)
+
+            probe["streams"][0].update(width=480, height=854)
+            with patch.object(meta, "_probe_video", return_value=probe):
+                with self.assertRaisesRegex(meta.MetaAIAutomationError, "below the required 720x1280"):
                     meta._validate_meta_clip(clip)
 
     def test_existing_three_scene_jobs_cannot_resume(self):

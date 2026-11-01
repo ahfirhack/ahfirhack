@@ -23,6 +23,51 @@ from modules import meta_ai_generator as meta
 
 
 class ParallelChannelsTests(unittest.TestCase):
+    def test_parallel_jobs_lease_different_meta_accounts(self):
+        with tempfile.TemporaryDirectory() as root:
+            states = []
+            for number in (1, 2):
+                path = Path(root) / f"account-{number}.json"
+                path.write_text("{}")
+                states.append((number, path))
+            barrier = threading.Barrier(2, timeout=5)
+            selected = []
+            selected_lock = threading.Lock()
+            results, failures = [], []
+
+            def render(*_args, account_slot, **_kwargs):
+                with selected_lock:
+                    selected.append(account_slot)
+                barrier.wait()
+                return [f"scene-{account_slot}.mp4"]
+
+            def run_one(index):
+                try:
+                    results.append(meta.ensure_rendered_clips(
+                        {"render_backend": "meta_ai", "job": index},
+                        Path(root), isolated_browser=True,
+                    ))
+                except Exception as error:
+                    failures.append(error)
+
+            with meta._ACCOUNT_STATE_CHANGED:
+                meta._UNAVAILABLE_ACCOUNT_STATES.clear()
+                meta._BUSY_ACCOUNT_STATES.clear()
+            with patch.object(meta, "_profile_dir", return_value=None), \
+                 patch.object(meta, "_storage_state_slots", return_value=states), \
+                 patch.object(meta, "_ensure_meta_rendered_clips", side_effect=render):
+                workers = [threading.Thread(target=run_one, args=(n,)) for n in (1, 2)]
+                for worker in workers:
+                    worker.start()
+                for worker in workers:
+                    worker.join(timeout=8)
+
+            self.assertFalse(failures)
+            self.assertCountEqual(selected, [1, 2])
+            self.assertCountEqual(results, [["scene-1.mp4"], ["scene-2.mp4"]])
+            with meta._ACCOUNT_STATE_CHANGED:
+                self.assertFalse(meta._BUSY_ACCOUNT_STATES)
+
     def test_local_numbered_account_files_are_discovered_automatically(self):
         with tempfile.TemporaryDirectory() as root:
             primary = Path(root) / "meta_ai_storage_state.json"

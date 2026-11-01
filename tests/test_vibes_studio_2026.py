@@ -166,19 +166,19 @@ class StudioTests(unittest.TestCase):
         high.click.assert_called_once()
         low.click.assert_not_called()
 
-    def test_studio_rejects_720p_only_account_before_generation(self):
+    def test_studio_rejects_below_720p_account_before_generation(self):
         page = MagicMock()
         page.url = 'https://vibes.ai/projects/test'
         option = MagicMock()
         option.is_visible.return_value = True
         option.is_enabled.return_value = True
-        option.inner_text.return_value = '720p'
+        option.inner_text.return_value = '480p'
         controls = MagicMock()
         controls.count.return_value = 1
         controls.nth.return_value = option
         page.get_by_role.return_value = controls
         with patch.object(meta, '_visible_last', return_value=MagicMock()):
-            with self.assertRaisesRegex(meta.MetaAIQualityUnavailable, 'at least 1080p'):
+            with self.assertRaisesRegex(meta.MetaAIQualityUnavailable, 'at least 720p'):
                 meta._select_highest_studio_quality(page)
 
 if __name__=='__main__': unittest.main()

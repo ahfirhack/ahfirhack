@@ -104,7 +104,7 @@ def _failure_hint(error_type: str) -> str:
         "MetaAILoginRequired": "The GitHub-hosted browser needs a valid Meta login. Refresh META_AI_STORAGE_STATE_B64 from your signed-in Chrome profile.",
         "MetaAIEditorUnavailable": "The Meta Create editor was not detected in the GitHub-hosted browser. Check the editor diagnostics and the account session.",
         "MetaAIVideoUnavailable": "Video generation or account quota is unavailable for this Meta session.",
-        "MetaAIQualityUnavailable": "This Meta account does not offer the required 1080p source generation. No lower-resolution upscale was accepted.",
+        "MetaAIQualityUnavailable": "This Meta account does not offer the required native 720p source generation.",
         "MetaAIAutomationError": "Meta generation/validation failed. Check the run logs and safe diagnostics.",
         "FileNotFoundError": "Required browser session, ffmpeg, or project file is missing.",
     }.get(error_type, "Check the failed stage and safe diagnostic JSON; no automatic retry was performed.")
@@ -124,7 +124,7 @@ def _copy_safe_diagnostics(job_dir: Path | None, artifacts: Path) -> None:
     reason_labels = {
         "empty_or_nonvideo_response", "missing_native_audio_or_video_track",
         "clip_duration_not_10_seconds", "not_portrait_video",
-        "source_resolution_below_1080p", "invalid_video_container",
+        "source_resolution_below_720p", "invalid_video_container",
         "not_a_video_file", "validation_rejected", "browser_download_save_failed",
         "file_write_error", "http_media_fetch_failed", "browser_media_fetch_failed",
     }

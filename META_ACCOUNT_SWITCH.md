@@ -55,6 +55,8 @@ Chrome stays open and **your normal profile is not deleted or copied**.
 Account slot 1 is always the primary account. Slots 2, 3, 4 and 5 are isolated
 fallbacks used only when an earlier account is signed out, quota-limited,
 ineligible or unavailable. Cookies and storage are never merged between slots.
+When channels run in parallel, each active browser leases a different account;
+the same account is never driven concurrently by two channel workers.
 
 For each additional account, sign into that account in regular Chrome, enable
 remote debugging temporarily, then import and publish its numbered slot:
@@ -75,7 +77,7 @@ The local files are `meta_ai_storage_state.json` (primary), then
 `META_AI_STORAGE_STATE_B64`, then `META_AI_STORAGE_STATE_2_B64` through `_5_B64`.
 All are ignored by Git. An ambiguous rendered-but-undownloaded scene does not
 fail over, because generating it again would spend quota and duplicate the
-remote render. A readable result confirmed below 1080p is instead treated as a
+remote render. A readable result confirmed below 720p is instead treated as a
 quality failure and advances to the next account, since it cannot be published.
 
 **Important limitations**

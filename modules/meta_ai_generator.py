@@ -95,13 +95,12 @@ NEGATIVE_LOCK = (
     "synchronized native audio together."
 )
 
-# The final master is 1440x2560, but scaling a 720p source does not create real
-# 1080p detail. Enforce the user's minimum on the Meta export itself as well as
-# the final assembly. Current Vibes accounts that top out at 720p therefore fail
-# closed instead of publishing a misleading upscale.
-MIN_META_SOURCE_WIDTH = 1080
-MIN_META_SOURCE_HEIGHT = 1920
-META_PROMPT_SCHEMA_VERSION = 3
+# Meta Create currently returns 720x1280 native clips for these accounts. Accept
+# that native source while the assembler keeps the published master at the
+# configured 1440x2560 canvas. Anything below 720p still fails closed.
+MIN_META_SOURCE_WIDTH = 720
+MIN_META_SOURCE_HEIGHT = 1280
+META_PROMPT_SCHEMA_VERSION = 4
 MAX_META_ACCOUNT_SLOTS = 5
 
 _EPISODE_PREFIXES = {
@@ -112,7 +111,9 @@ _EPISODE_PREFIXES = {
 }
 
 _ACCOUNT_FAILURE_LOCK = threading.Lock()
+_ACCOUNT_STATE_CHANGED = threading.Condition(_ACCOUNT_FAILURE_LOCK)
 _UNAVAILABLE_ACCOUNT_STATES: set[str] = set()
+_BUSY_ACCOUNT_STATES: set[str] = set()
 
 class MetaAIAutomationError(RuntimeError):
     """Meta AI could not complete an unattended browser operation."""
@@ -322,7 +323,7 @@ def _scene_prompt(index: int, narration: str, story: dict, channel: dict, *,
         f"FIXED VOICE ID / DO NOT REGENERATE VOICE IDENTITY: "
         f"{locks['speaker']}={locks['voice_id']}. {locks['voice']}",
         f"PRODUCTION: Exactly {META_SCENE_DURATION}.00 seconds, vertical 9:16, "
-        "true source resolution 1080x1920 minimum (1440x2560 preferred), stable "
+        "native source resolution 720x1280 minimum (higher if Meta offers it), stable "
         "24-or-30-fps motion, synchronized Meta-native dialogue, ambience and a "
         "subtle continuous original score beneath speech. No separate voiceover, "
         "external audio, captions, title card, intro, outro or transition.",
@@ -629,7 +630,7 @@ _META_EDITOR_SELECTORS = (
 def _meta_surface_order() -> list[str]:
     # Meta Create is the only production default.  Vibes Studio currently
     # exports short, silent 720p clips and must never become an automatic
-    # fallback for channels that require native audio and true 1080p sources.
+    # fallback for channels that require native audio and usable 720p sources.
     # The other Meta-owned surfaces remain available only when a developer
     # explicitly opts into them for diagnostics with META_AI_SURFACES.
     raw = os.getenv("META_AI_SURFACES", "create")
@@ -1345,7 +1346,7 @@ def _select_highest_studio_quality(page) -> int | None:
     """Choose Vibes Studio's highest visible source-resolution option.
 
     Meta rolls out different maximums by account, so prefer the largest numeric
-    option rather than hard-coding one label. A Studio editor without 1080p
+    option rather than hard-coding one label. A Studio editor without 720p
     fails before generation; it must not silently spend a render at 480p.
     Non-Studio Meta surfaces are validated from the downloaded file instead.
     """
@@ -1388,11 +1389,10 @@ def _select_highest_studio_quality(page) -> int | None:
             "resolution option was available."
         )
     resolution, control = max(choices, key=lambda item: item[0])
-    if resolution < 1080:
+    if resolution < 720:
         raise MetaAIQualityUnavailable(
             f"Vibes Studio's highest available source quality is {resolution}p; "
-            "at least 1080p source quality is required. Upscaling a lower "
-            "quality export is not accepted as genuine 1080p."
+            "at least 720p source quality is required."
         )
     control.click(timeout=5_000)
     page.wait_for_timeout(250)
@@ -1596,18 +1596,18 @@ def _save_media_source(context, page, source: str, target: Path,
             diagnostic_path=diagnostic_path, source_supplier=fresh_sources,
         )
     except MetaClipDownloadError as error:
-        # A readable rendered source that is definitively below 1080p is not an
+        # A readable rendered source that is definitively below 720p is not an
         # ambiguous export failure: this account cannot satisfy the required
         # quality for this scene. Let ordered account failover continue. Other
         # rendered-but-undownloadable results remain paused to avoid duplicates.
-        if "source_resolution_below_1080p" in error.rejection_reasons:
+        if "source_resolution_below_720p" in error.rejection_reasons:
             if debug_path is not None:
                 debug_path.with_name(
                     debug_path.stem + "_download_pending.json"
                 ).unlink(missing_ok=True)
             raise MetaAIQualityUnavailable(
-                "Meta rendered this scene only below the required 1080x1920 "
-                "source quality; trying the next configured account."
+                "Meta rendered this scene only below the required 720x1280 "
+                "source quality; this account cannot satisfy the quality policy."
             ) from error
         # The video has ALREADY been generated on Meta. Keep a durable local
         # marker so the next 6-hour run cannot accidentally spend another
@@ -1971,7 +1971,12 @@ def _ensure_meta_rendered_clips(
 def ensure_rendered_clips(
     manifest: dict, job_dir: Path, *, isolated_browser: bool = False,
 ) -> list[str]:
-    """Render through up to five isolated Meta sessions in ordered failover."""
+    """Render through five isolated sessions without sharing an account.
+
+    Concurrent channel workers lease different account-state files. This stops
+    three browsers from spending quota on the same Meta account at once while
+    retaining primary-to-fallback preference among accounts not already busy.
+    """
     if manifest.get("render_backend") not in (None, "meta_ai"):
         raise MetaAIAutomationError("Non-Meta render backend is prohibited")
     # A deliberately configured persistent local profile is a single-account
@@ -1982,15 +1987,37 @@ def ensure_rendered_clips(
         )
 
     slots = _storage_state_slots(required=True)
-    errors = []
-    for position, (slot, state_path) in enumerate(slots):
-        state_key = str(state_path)
-        with _ACCOUNT_FAILURE_LOCK:
-            unavailable = state_key in _UNAVAILABLE_ACCOUNT_STATES
-        if unavailable and position < len(slots) - 1:
-            print(f"[MetaAI] Skipping unavailable account {slot}; trying next account")
-            continue
-        print(f"[MetaAI] Using Meta account {slot}/{max(number for number, _ in slots)}")
+    errors: list[str] = []
+    attempted: set[str] = set()
+    last_error: MetaAIAutomationError | None = None
+    highest_slot = max(number for number, _ in slots)
+    while True:
+        selected: tuple[int, Path, str] | None = None
+        with _ACCOUNT_STATE_CHANGED:
+            for slot, state_path in slots:
+                state_key = str(state_path)
+                if (state_key in attempted
+                        or state_key in _UNAVAILABLE_ACCOUNT_STATES
+                        or state_key in _BUSY_ACCOUNT_STATES):
+                    continue
+                _BUSY_ACCOUNT_STATES.add(state_key)
+                selected = (slot, state_path, state_key)
+                break
+            if selected is None:
+                remaining = [
+                    str(path) for _, path in slots
+                    if (str(path) not in attempted
+                        and str(path) not in _UNAVAILABLE_ACCOUNT_STATES)
+                ]
+                if not remaining:
+                    break
+                # Every otherwise-usable account is leased by another channel.
+                # Wait for one render/failure boundary, then rescan in order.
+                _ACCOUNT_STATE_CHANGED.wait(timeout=30)
+                continue
+
+        slot, state_path, state_key = selected
+        print(f"[MetaAI] Using exclusive Meta account {slot}/{highest_slot}")
         try:
             return _ensure_meta_rendered_clips(
                 manifest, job_dir, isolated_browser=isolated_browser,
@@ -2001,23 +2028,30 @@ def ensure_rendered_clips(
             # a duplicate and spend quota, so manual recovery remains mandatory.
             raise
         except MetaAIAutomationError as error:
+            attempted.add(state_key)
+            last_error = error
             errors.append(f"account {slot}={type(error).__name__}")
             if isinstance(error, (
                 MetaAILoginRequired,
                 MetaAIEditorUnavailable,
                 MetaAIVideoUnavailable,
             )):
-                with _ACCOUNT_FAILURE_LOCK:
+                with _ACCOUNT_STATE_CHANGED:
                     _UNAVAILABLE_ACCOUNT_STATES.add(state_key)
-            if position < len(slots) - 1:
-                print(
-                    f"[MetaAI] Account {slot} failed with {type(error).__name__}; "
-                    "continuing with the next configured account"
-                )
-                continue
-            print("[MetaAI] All configured Meta accounts failed (" +
-                  ", ".join(errors) + ")")
-            raise
+            print(
+                f"[MetaAI] Account {slot} failed with {type(error).__name__}; "
+                "continuing with the next available account"
+            )
+        finally:
+            with _ACCOUNT_STATE_CHANGED:
+                _BUSY_ACCOUNT_STATES.discard(state_key)
+                _ACCOUNT_STATE_CHANGED.notify_all()
+
+    if errors:
+        print("[MetaAI] All configured Meta accounts failed (" +
+              ", ".join(errors) + ")")
+    if last_error is not None:
+        raise last_error
     raise MetaAIAutomationError(
         "All configured Meta account sessions are currently unavailable."
     )

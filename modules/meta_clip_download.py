@@ -157,7 +157,7 @@ def _validation_label(error: Exception) -> str:
     if "must be 9:16-ish portrait" in reason:
         return "not_portrait_video"
     if "below the required" in reason and "source quality" in reason:
-        return "source_resolution_below_1080p"
+        return "source_resolution_below_720p"
     if "ffprobe" in reason or "metadata" in reason:
         return "invalid_video_container"
     if "did not return a real video" in reason:

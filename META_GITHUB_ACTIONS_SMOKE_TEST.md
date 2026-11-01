@@ -4,7 +4,7 @@ This is a **manually triggered**, standalone smoke test for your existing Meta-o
 
 ## Modes
 
-- **1 scene (default)**: Launch Playwright on a GitHub-hosted Ubuntu runner, restore the ordered Meta sessions (slot 1 from `META_AI_STORAGE_STATE_B64`, plus any configured slots 2–5), open **Meta Create only**, submit a new original StoryFuse scene prompt, wait for completion, **download the actual video**, and verify its 10-second duration, 9:16-ish portrait orientation, video track, native audio track, and true 1080p-or-higher source resolution. Includes the downloaded MP4 in Actions artifacts on success. Does not assemble an incomplete Short and never falls back to Vibes Studio.
+- **1 scene (default)**: Launch Playwright on a GitHub-hosted Ubuntu runner, restore the ordered Meta sessions (slot 1 from `META_AI_STORAGE_STATE_B64`, plus any configured slots 2–5), open **Meta Create only**, submit a new original StoryFuse scene prompt, wait for completion, **download the actual video**, and verify its 10-second duration, 9:16-ish portrait orientation, video track, native audio track, and native 720p-or-higher source resolution. Includes the downloaded MP4 in Actions artifacts on success. Does not assemble an incomplete Short and never falls back to Vibes Studio.
 - **5 scenes**: Do the above five times, attaching the actual last frame from the preceding Meta clip, validate continuity, and assemble one 50-second Short using the existing FFmpeg assembler. Adds `META_GITHUB_SMOKE_50S.mp4` to the workflow artifact. This costs up to five Meta generations and is intended **only after mode 1 passes**.
 
 Both modes use an isolated fresh job and do not consume your prompt-reserve queues. Neither mode reads YouTube credentials or sends a YouTube upload. No third-party stock media, separate voice-over, or image generation is used.
@@ -46,7 +46,7 @@ Do not commit `meta_ai_storage_state.json`, credentials, session cookies, Chrome
 
 ## Important limits and safeguards
 
-- This is a real live test; it can use Meta generation credits or quota. An ambiguously rendered clip that fails to download is **not automatically regenerated** by the smoke test. A readable clip confirmed below 1080p advances to the next account because it cannot satisfy the publishing policy. `diagnostics/scene_01_download.json` records failure reasons.
+- This is a real live test; it can use Meta generation credits or quota. An ambiguously rendered clip that fails to download is **not automatically regenerated** by the smoke test. A readable clip confirmed below 720p advances to the next account because it cannot satisfy the publishing policy. `diagnostics/scene_01_download.json` records failure reasons.
 - Passing unit tests does **not** mean video downloads work on the live Meta site; only a completed GitHub run with a valid MP4 artifact proves that.
 - Only safe JSON metadata and generated clips are uploaded. **Screenshots, cookies, storage state, media URLs, authentication traces and YouTube credentials are never part of the test artifact.** Generated video clips may still be visible to people who can access the repository's workflow artifacts; keep the repository private if necessary.
 - GitHub-hosted runners use a separate browser and often run from a different IP/location; Meta might require a new login or reject the copied session. That cannot be solved by extra selector retries.

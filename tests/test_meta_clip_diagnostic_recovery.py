@@ -101,11 +101,11 @@ class DiagnosticRecoveryTests(unittest.TestCase):
         self.assertEqual(_validation_label(Exception('sensitive https://example/?access_token=abcd')),
                          'validation_rejected')
 
-    def test_confirmed_low_resolution_continues_account_failover(self):
+    def test_confirmed_below_720p_continues_account_failover(self):
         debug = self.root / 'quality' / 'scene_01.png'
         error = MetaClipDownloadError(
             'rendered below policy',
-            rejection_reasons={'source_resolution_below_1080p'},
+            rejection_reasons={'source_resolution_below_720p'},
         )
         with patch.object(meta, 'save_generated_clip', side_effect=error):
             with self.assertRaises(meta.MetaAIQualityUnavailable):

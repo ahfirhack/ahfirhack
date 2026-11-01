@@ -10,9 +10,9 @@ Read **[META_ONLY_6_HOUR_SETUP.md](META_ONLY_6_HOUR_SETUP.md)** for full instruc
 
 ### Processing stages
 
-`Unique script from saved queue or text-only generator` → `Meta AI 5 × 10 sec portrait videos + native audio (previous last frame attached)` → `continuity / audio / duration / true 1080p-source validation` → `FFmpeg frame-matched 1440×2560, 50-second assembly` → `YouTube Short upload to that channel`.
+`Unique script from saved queue or text-only generator` → `Meta AI 5 × 10 sec portrait videos + native audio (previous last frame attached)` → `continuity / audio / duration / native 720p-source validation` → `FFmpeg frame-matched 1440×2560, 50-second assembly` → `YouTube Short upload to that channel`.
 
-If Meta AI is unavailable or produces a silent, short, discontinuous, or sub-1080p scene, its channel fails closed with resumable artifacts; there is **no media, voiceover, or resolution-upscale fallback**.
+If Meta AI is unavailable or produces a silent, short, discontinuous, or sub-720p scene, its channel fails closed with resumable artifacts; there is **no media or voiceover fallback**. Native 720×1280 Meta clips are resized into the configured 1440×2560 final master during normal assembly.
 
 ### Quick commands (PowerShell, non-administrator)
 
