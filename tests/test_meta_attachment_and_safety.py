@@ -89,6 +89,14 @@ class MetaAttachmentAndSafetyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             job = Path(temp) / "channel_1" / "old-job"
             job.mkdir(parents=True)
+            (job / "renders").mkdir()
+            (job / "continuity").mkdir()
+            (job / "debug").mkdir()
+            (job / "renders" / "scene_01.mp4").write_bytes(b"old-video")
+            (job / "continuity" / "scene_01_last.png").write_bytes(b"old-frame")
+            (job / "debug" / "scene_02_download_pending.json").write_text(
+                "{}", encoding="utf-8",
+            )
             story = {
                 "title": "Named Defendant Charged",
                 "script": "A record says Jane Example was charged in an alleged scheme.",
@@ -112,9 +120,20 @@ class MetaAttachmentAndSafetyTests(unittest.TestCase):
             with patch.object(meta, "META_AI_JOBS_DIR", temp):
                 upgraded, directory = meta.find_active_job("channel_1")
             self.assertEqual(job, directory)
-            self.assertEqual(2, upgraded["prompt_policy_version"])
+            self.assertEqual(meta.META_PROMPT_POLICY_VERSION,
+                             upgraded["prompt_policy_version"])
             self.assertTrue(all(
                 "Jane Example" not in scene["prompt"]
+                for scene in upgraded["scenes"]
+            ))
+            self.assertEqual("awaiting_meta_ai", upgraded["status"])
+            self.assertFalse((job / "renders" / "scene_01.mp4").exists())
+            self.assertFalse((job / "continuity" / "scene_01_last.png").exists())
+            self.assertFalse(
+                (job / "debug" / "scene_02_download_pending.json").exists()
+            )
+            self.assertTrue(all(
+                "rendered" not in scene and "meta_account_slot" not in scene
                 for scene in upgraded["scenes"]
             ))
             self.assertTrue((job / "meta_prompts.txt").is_file())

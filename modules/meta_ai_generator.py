@@ -102,6 +102,7 @@ NEGATIVE_LOCK = (
 # configured 1440x2560 canvas. Anything below 720p still fails closed.
 MIN_META_SOURCE_WIDTH = 720
 MIN_META_SOURCE_HEIGHT = 1280
+META_PROMPT_POLICY_VERSION = 3
 META_PROMPT_SCHEMA_VERSION = 4
 MAX_META_ACCOUNT_SLOTS = 5
 
@@ -476,7 +477,7 @@ def _render_prompt_markdown(manifest: dict) -> str:
 
 def _refresh_active_manifest_prompts(manifest: dict, job_dir: Path) -> None:
     """Upgrade cached active jobs to the current attachment/safety prompt policy."""
-    if manifest.get("prompt_policy_version") == 2:
+    if manifest.get("prompt_policy_version") == META_PROMPT_POLICY_VERSION:
         return
     channel_id = str(manifest.get("channel_id") or "")
     if channel_id not in CHANNEL_LOCKS:
@@ -503,13 +504,43 @@ def _refresh_active_manifest_prompts(manifest: dict, job_dir: Path) -> None:
                 scene_plan=plan, episode_code=episode_code,
             ),
         })
+    # Prompts, character locks, locations and shot actions form one visual
+    # contract.  Keeping even scene 1 from an older policy makes every later
+    # reference image contradict the new prompts.  That was especially harmful
+    # for Channel 1: an old reenactment frame was handed to the new fictional
+    # presenter prompt, so Meta produced valid but visibly reset scene-2 clips
+    # until several account quotas were spent.  A policy migration must restart
+    # the visual episode while preserving its sourced story and dedup identity.
+    removed_clips = 0
+    for directory_name in ("renders", "continuity"):
+        directory = job_dir / directory_name
+        if not directory.exists():
+            continue
+        for path in directory.iterdir():
+            if path.is_file():
+                path.unlink(missing_ok=True)
+                if directory_name == "renders":
+                    removed_clips += 1
+    debug_dir = job_dir / "debug"
+    if debug_dir.exists():
+        for marker in debug_dir.glob("*_download_pending.json"):
+            marker.unlink(missing_ok=True)
+    for scene in scenes:
+        scene.pop("rendered", None)
+        scene.pop("meta_account_slot", None)
+
     manifest["channel_locks"] = CHANNEL_LOCKS[channel_id]
-    manifest["prompt_policy_version"] = 2
+    manifest["prompt_policy_version"] = META_PROMPT_POLICY_VERSION
+    manifest["status"] = "awaiting_meta_ai"
     _save_manifest(manifest, job_dir)
     (job_dir / "meta_prompts.txt").write_text(
         _render_prompt_markdown(manifest), encoding="utf-8",
     )
-    print("[MetaAI] Upgraded cached job to attachment-safe prompt policy v2")
+    print(
+        "[MetaAI] Upgraded cached job to prompt policy "
+        f"v{META_PROMPT_POLICY_VERSION}; removed {removed_clips} incompatible "
+        "cached scene(s)"
+    )
 
 
 def find_active_job(channel_id: str) -> tuple[dict, Path] | None:
@@ -574,7 +605,7 @@ def create_job(channel: dict, story: dict) -> tuple[dict, Path]:
         "channel_name": channel["name"],
         "generator": "Meta AI Create through Playwright, Meta-only",
         "schema_version": META_PROMPT_SCHEMA_VERSION,
-        "prompt_policy_version": 2,
+        "prompt_policy_version": META_PROMPT_POLICY_VERSION,
         "episode_code": episode_code,
         "render_backend": "meta_ai",
         "status": "awaiting_meta_ai",
@@ -2124,7 +2155,7 @@ def _extract_last_frame(video_path: Path, frame_path: Path) -> None:
         raise MetaAIAutomationError("Cannot extract the exact Meta scene final frame")
 
 
-def _check_scene_handoff(previous_last: Path, new_scene: Path) -> None:
+def _check_scene_handoff(previous_last: Path, new_scene: Path) -> float:
     """Detect a major scene reset before a video could be published.
 
     An actual image reference is mandatory AND the first frame must roughly
@@ -2154,6 +2185,7 @@ def _check_scene_handoff(previous_last: Path, new_scene: Path) -> None:
             f"Scene visibly reset instead of using previous final frame "
             f"(mean pixel difference {delta:.3f} > {META_MAX_HANDOFF_DELTA:.3f}); regenerate"
         )
+    return delta
 
 
 def collect_rendered_clips(manifest: dict, job_dir: Path) -> list[str]:
@@ -2330,7 +2362,10 @@ def _ensure_meta_rendered_clips(
                             except Exception:
                                 pass
                             project_page = None
-                        print(f"[MetaAI] Scene {scene['index']} failed: {type(error).__name__}")
+                        print(
+                            f"[MetaAI] Scene {scene['index']} failed: "
+                            f"{type(error).__name__}: {error}"
+                        )
                         if attempt < META_AI_MAX_RETRIES:
                             time.sleep(min(attempt * 10, 30))
                 if last_error is not None:
@@ -2435,8 +2470,8 @@ def ensure_rendered_clips(
                 with _ACCOUNT_STATE_CHANGED:
                     _UNAVAILABLE_ACCOUNT_STATES.add(state_key)
             print(
-                f"[MetaAI] Account {slot} failed with {type(error).__name__}; "
-                "continuing with the next available account"
+                f"[MetaAI] Account {slot} failed with {type(error).__name__}: "
+                f"{error}; continuing with the next available account"
             )
         finally:
             with _ACCOUNT_STATE_CHANGED:
