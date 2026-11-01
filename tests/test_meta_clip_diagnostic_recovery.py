@@ -7,8 +7,15 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from modules.meta_clip_download import _commit_valid_bytes, _video_metadata, _validation_label
+from modules import meta_ai_generator as meta
+from modules.meta_clip_download import (
+    MetaClipDownloadError,
+    _commit_valid_bytes,
+    _video_metadata,
+    _validation_label,
+)
 from modules.meta_ai_generator import _validate_meta_clip
 from recover_meta_scene import recover
 
@@ -93,6 +100,20 @@ class DiagnosticRecoveryTests(unittest.TestCase):
                          'missing_native_audio_or_video_track')
         self.assertEqual(_validation_label(Exception('sensitive https://example/?access_token=abcd')),
                          'validation_rejected')
+
+    def test_confirmed_low_resolution_continues_account_failover(self):
+        debug = self.root / 'quality' / 'scene_01.png'
+        error = MetaClipDownloadError(
+            'rendered below policy',
+            rejection_reasons={'source_resolution_below_1080p'},
+        )
+        with patch.object(meta, 'save_generated_clip', side_effect=error):
+            with self.assertRaises(meta.MetaAIQualityUnavailable):
+                meta._save_media_source(None, None, 'https://meta.invalid/video',
+                                        self.root / 'quality' / 'scene_01.mp4', debug)
+        self.assertFalse(
+            debug.with_name('scene_01_download_pending.json').exists()
+        )
 
 
 if __name__ == '__main__':

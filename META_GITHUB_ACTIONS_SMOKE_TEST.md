@@ -46,7 +46,7 @@ Do not commit `meta_ai_storage_state.json`, credentials, session cookies, Chrome
 
 ## Important limits and safeguards
 
-- This is a real live test; it can use Meta generation credits or quota. A rendered clip that fails to download is **not automatically regenerated** by the smoke test. `diagnostics/scene_01_download.json` records failure reasons.
+- This is a real live test; it can use Meta generation credits or quota. An ambiguously rendered clip that fails to download is **not automatically regenerated** by the smoke test. A readable clip confirmed below 1080p advances to the next account because it cannot satisfy the publishing policy. `diagnostics/scene_01_download.json` records failure reasons.
 - Passing unit tests does **not** mean video downloads work on the live Meta site; only a completed GitHub run with a valid MP4 artifact proves that.
 - Only safe JSON metadata and generated clips are uploaded. **Screenshots, cookies, storage state, media URLs, authentication traces and YouTube credentials are never part of the test artifact.** Generated video clips may still be visible to people who can access the repository's workflow artifacts; keep the repository private if necessary.
 - GitHub-hosted runners use a separate browser and often run from a different IP/location; Meta might require a new login or reject the copied session. That cannot be solved by extra selector retries.

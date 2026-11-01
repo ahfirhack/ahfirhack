@@ -1596,6 +1596,19 @@ def _save_media_source(context, page, source: str, target: Path,
             diagnostic_path=diagnostic_path, source_supplier=fresh_sources,
         )
     except MetaClipDownloadError as error:
+        # A readable rendered source that is definitively below 1080p is not an
+        # ambiguous export failure: this account cannot satisfy the required
+        # quality for this scene. Let ordered account failover continue. Other
+        # rendered-but-undownloadable results remain paused to avoid duplicates.
+        if "source_resolution_below_1080p" in error.rejection_reasons:
+            if debug_path is not None:
+                debug_path.with_name(
+                    debug_path.stem + "_download_pending.json"
+                ).unlink(missing_ok=True)
+            raise MetaAIQualityUnavailable(
+                "Meta rendered this scene only below the required 1080x1920 "
+                "source quality; trying the next configured account."
+            ) from error
         # The video has ALREADY been generated on Meta. Keep a durable local
         # marker so the next 6-hour run cannot accidentally spend another
         # generation just to encounter the same failed export.

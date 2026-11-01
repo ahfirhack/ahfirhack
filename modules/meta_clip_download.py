@@ -20,6 +20,10 @@ from urllib.parse import urlsplit
 class MetaClipDownloadError(RuntimeError):
     """Meta finished rendering, but the completed video was not saved."""
 
+    def __init__(self, message: str, *, rejection_reasons=()):
+        super().__init__(message)
+        self.rejection_reasons = frozenset(rejection_reasons)
+
 
 class _Capture:
     """Observe downloads started in this isolated Playwright browser context."""
@@ -461,7 +465,11 @@ def save_generated_clip(context, page, source: str, target: Path, validate,
     raise MetaClipDownloadError(
         "Meta video rendered but no valid clip was saved using its Download/Export "
         "control or browser media source. The job is paused to avoid "
-        "regenerating the same scene and wasting credits." + hint
+        "regenerating the same scene and wasting credits." + hint,
+        rejection_reasons={
+            item.get("reason") for item in data["rejections"]
+            if isinstance(item, dict) and isinstance(item.get("reason"), str)
+        },
     )
 
 

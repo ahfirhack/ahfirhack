@@ -73,9 +73,10 @@ python switch_meta_account.py --from-open-chrome --slot 5 --publish --repo OWNER
 The local files are `meta_ai_storage_state.json` (primary), then
 `meta_ai_storage_state_2.json` through `_5.json`. GitHub stores them as
 `META_AI_STORAGE_STATE_B64`, then `META_AI_STORAGE_STATE_2_B64` through `_5_B64`.
-All are ignored by Git. A rendered-but-undownloaded scene never fails over,
-because generating it again on another account would spend quota and duplicate
-the remote render.
+All are ignored by Git. An ambiguous rendered-but-undownloaded scene does not
+fail over, because generating it again would spend quota and duplicate the
+remote render. A readable result confirmed below 1080p is instead treated as a
+quality failure and advances to the next account, since it cannot be published.
 
 **Important limitations**
 
