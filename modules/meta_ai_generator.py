@@ -41,8 +41,8 @@ CHANNEL_LOCKS = {
     "channel_1": {
         "speaker": "the on-camera documentary presenter",
         "voice_id": "SCF-PRESENTER-01",
-        "character": "An original adult documentary presenter with short dark hair, charcoal field jacket, neutral shirt, and the same face, build, wardrobe, posture and gestures across all five scenes. All people depicted in alleged crimes are unnamed illustrative actors, not claims of authentic footage or exact likenesses.",
-        "style": "Photorealistic cinematic investigative documentary reenactment, grounded public-record details, realistic tech settings, high contrast, natural human motion, sharp professional cinematography. No defamatory inventions, fake evidence, or fabricated quotes.",
+        "character": "An original fictional adult documentary presenter with short dark hair, charcoal field jacket, neutral shirt, and the same face, build, wardrobe, posture and gestures across all five scenes. The presenter is the only visible person. Never depict or imitate any real accused person, defendant, victim, witness, official or private individual.",
+        "style": "Photorealistic cinematic presenter-led public-record explainer in one investigative studio, with abstract unlabeled evidence props, realistic technology, high contrast, natural human motion and sharp professional cinematography. Never reenact a real person's alleged conduct and never invent evidence, quotes or likenesses.",
         "voice": "The presenter is the only speaker, always with the exact same adult American English voice, accent, pitch, timbre and recording ambience. All sound is synchronized IN-SCENE, never a detached voiceover. Other people are silent; their lips stay closed while the presenter speaks.",
         "role": "investigative documentary with one on-camera presenter",
     },
@@ -141,6 +141,14 @@ class MetaAITransientError(MetaAIAutomationError):
     """Meta reported a temporary service failure that should be retried."""
 
 
+class MetaAIAttachmentError(MetaAIAutomationError):
+    """The required previous-scene frame did not reach Meta's composer."""
+
+
+class MetaAIContentRejected(MetaAIAutomationError):
+    """Meta refused the submitted scene prompt rather than rendering it."""
+
+
 class MetaAIDuplicateScene(MetaAIAutomationError):
     """Meta returned video content already used by an earlier scene."""
 
@@ -224,12 +232,87 @@ def _split_narration(script: str, count: int) -> list[str]:
     return beats
 
 
-def _story_scene_plan(story: dict, count: int) -> list[dict]:
+def _tech_crime_meta_plan(story: dict) -> list[dict]:
+    """Create factual but anonymized presenter dialogue safe for Meta video.
+
+    The original sourced script remains untouched for YouTube metadata. Meta's
+    visual prompt must not ask for photorealistic depictions of named people in
+    criminal cases, so the generated film uses one fictional presenter only.
+    """
+    source = " ".join(str(story.get("script") or "").split())
+    lower = source.casefold()
+    amount_match = re.search(
+        r"(?:over|more than|approximately|about)?\s*\$[\d,.]+\s*"
+        r"(?:million|billion|thousand)?",
+        source,
+        re.I,
+    )
+    if amount_match:
+        amount = " ".join(amount_match.group(0).split())
+        evidence_line = (
+            f"The official filing reports {amount} in losses without depicting "
+            "any real person."
+        )
+    else:
+        evidence_line = (
+            "The documented evidence explains the alleged scheme without "
+            "depicting any real person."
+        )
+
+    if "pleaded guilty" in lower or "plead guilty" in lower:
+        status_line = "Court records state that the defendants entered guilty pleas in this case."
+    elif "sentenced" in lower or "sentence imposed" in lower:
+        status_line = "Court records state that a sentence was imposed in this case."
+    elif "convicted" in lower or "conviction" in lower:
+        status_line = "Court records state that a conviction was entered in this case."
+    elif "settlement" in lower or "settled" in lower:
+        status_line = "The official record documents a settlement and its stated legal terms."
+    elif any(word in lower for word in ("charged", "indicted", "arrested")):
+        status_line = "The public record describes charges or allegations, not a conviction."
+    else:
+        status_line = "The official record states the case's current legal posture and outcome."
+
+    dialogue = (
+        "This official public record documents a technology and corporate crime case.",
+        "I'll trace the case using anonymized evidence and financial records.",
+        evidence_line,
+        status_line,
+        "The linked official source provides the dates, evidence summary, and legal outcome.",
+    )
+    actions = (
+        "The fictional presenter opens an unmarked case folder at a dark evidence table while an abstract network glows behind them",
+        "The same presenter moves one unlabeled marker along an abstract transaction path without showing any other person",
+        "The presenter groups generic evidence tokens beside a defocused financial graph as the camera continues its slow move",
+        "The presenter turns one plain case card to reveal a color-coded legal-status symbol with no readable text",
+        "The presenter closes the unmarked folder, faces the camera and rests one hand beside the completed abstract evidence layout",
+    )
+    end_frames = (
+        "Presenter left of frame, open unmarked folder centered, blue network glow behind, camera moving slowly right",
+        "Presenter left-center, one marker held above the transaction path, folder and lighting unchanged, camera still moving right",
+        "Presenter center, evidence tokens grouped beside the defocused graph, hand still in motion, same camera axis",
+        "Presenter right-center holding the plain status card above the same table, folder open, camera nearing a medium close-up",
+        "Presenter centered in medium close-up, folder closed on the same table, abstract evidence layout visible, no outro",
+    )
+    return [
+        {"dialogue": line, "action": action, "end_frame": end_frame}
+        for line, action, end_frame in zip(dialogue, actions, end_frames)
+    ]
+
+
+def _story_scene_plan(story: dict, count: int,
+                      channel_id: str | None = None) -> list[dict]:
     """Return five validated dialogue/action/end-frame rows.
 
     New text generators provide these rows directly. Existing prompt-reserve
     records are upgraded deterministically from their chronological script.
     """
+    if channel_id == "channel_1":
+        if count != META_SCENE_COUNT:
+            raise MetaAIAutomationError(
+                "Silicon Crime Meta plan requires exactly five scenes"
+            )
+        return _tech_crime_meta_plan(story)
+
     raw_plan = story.get("scene_plan")
     if isinstance(raw_plan, list) and len(raw_plan) == count:
         normalized = []
@@ -252,7 +335,7 @@ def _story_scene_plan(story: dict, count: int) -> list[dict]:
             return normalized
 
     beats = _split_narration(story["script"], count)
-    return [
+    fallback = [
         {
             "dialogue": beat,
             "action": (
@@ -266,6 +349,7 @@ def _story_scene_plan(story: dict, count: int) -> list[dict]:
         }
         for beat in beats
     ]
+    return fallback
 
 
 def _episode_code(story: dict, channel: dict) -> str:
@@ -319,9 +403,29 @@ def _scene_prompt(index: int, narration: str, story: dict, channel: dict, *,
             "camera direction and character motion."
         )
     )
-    location = " ".join(str(story.get("search_query") or story["title"]).split())
+    if channel["id"] == "channel_1":
+        location = (
+            "one fictional investigative studio with an unmarked case folder, "
+            "abstract transaction map and defocused financial evidence"
+        )
+        full_context = (
+            "A fictional unnamed presenter explains an official public record. "
+            "No real person is shown, imitated or visually reenacted. "
+            + " ".join(
+                row["dialogue"] for row in _tech_crime_meta_plan(story)
+            )
+        )
+    else:
+        location = " ".join(
+            str(story.get("search_query") or story["title"]).split()
+        )
+        full_context = story["script"]
+    prompt_title = (
+        "Anonymized Public-Record Case"
+        if channel["id"] == "channel_1" else story["title"]
+    )
     return "\n".join((
-        f"EPISODE {episode_code} — {story['title']} | SCENE {index}/{META_SCENE_COUNT} | "
+        f"EPISODE {episode_code} — {prompt_title} | SCENE {index}/{META_SCENE_COUNT} | "
         f"ABSOLUTE EPISODE TIME {start:02d}–{end:02d}s.",
         "META AI VIDEO GENERATION ONLY.",
         f"EXACT REFERENCE-IMAGE CHARACTER LOCK: {reference}",
@@ -337,7 +441,7 @@ def _scene_prompt(index: int, narration: str, story: dict, channel: dict, *,
         f"LOCATION / STORY-STATE LOCK: {location}. Keep identical layout, prop state, "
         "scale, time of day, lighting, camera axis and audio bed across all five clips.",
         f"FULL EPISODE CONTEXT — FOR ACTION/IDENTITY ONLY, DO NOT SPEAK IN FULL: "
-        f"{story['script']}",
+        f"{full_context}",
         f"SPEAKING CAST FOR THIS CLIP: {locks['speaker']} [{locks['voice_id']}] says "
         f"EXACTLY: “{narration}” Do not improvise, paraphrase or add words. "
         "These words are audio only; never display them as text.",
@@ -370,6 +474,44 @@ def _render_prompt_markdown(manifest: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _refresh_active_manifest_prompts(manifest: dict, job_dir: Path) -> None:
+    """Upgrade cached active jobs to the current attachment/safety prompt policy."""
+    if manifest.get("prompt_policy_version") == 2:
+        return
+    channel_id = str(manifest.get("channel_id") or "")
+    if channel_id not in CHANNEL_LOCKS:
+        raise MetaAIAutomationError("Cached Meta job has an unknown channel")
+    story = manifest.get("story")
+    scenes = manifest.get("scenes")
+    if not isinstance(story, dict) or not isinstance(scenes, list):
+        raise MetaAIAutomationError("Cached Meta job is missing story or scenes")
+    channel = {"id": channel_id}
+    plans = _story_scene_plan(
+        story, META_SCENE_COUNT, channel_id=channel_id,
+    )
+    episode_code = str(
+        manifest.get("episode_code") or _episode_code(story, channel)
+    )
+    for scene, plan in zip(scenes, plans):
+        index = int(scene["index"])
+        scene.update({
+            "narration": plan["dialogue"],
+            "action": plan["action"],
+            "end_frame": plan["end_frame"],
+            "prompt": _scene_prompt(
+                index, plan["dialogue"], story, channel,
+                scene_plan=plan, episode_code=episode_code,
+            ),
+        })
+    manifest["channel_locks"] = CHANNEL_LOCKS[channel_id]
+    manifest["prompt_policy_version"] = 2
+    _save_manifest(manifest, job_dir)
+    (job_dir / "meta_prompts.txt").write_text(
+        _render_prompt_markdown(manifest), encoding="utf-8",
+    )
+    print("[MetaAI] Upgraded cached job to attachment-safe prompt policy v2")
+
+
 def find_active_job(channel_id: str) -> tuple[dict, Path] | None:
     channel_dir = Path(META_AI_JOBS_DIR) / channel_id
     if not channel_dir.exists():
@@ -388,6 +530,7 @@ def find_active_job(channel_id: str) -> tuple[dict, Path] | None:
                 and len(manifest.get("scenes", [])) == META_SCENE_COUNT
                 and manifest.get("render_backend") in (None, "meta_ai")
                 and manifest.get("schema_version") == META_PROMPT_SCHEMA_VERSION):
+            _refresh_active_manifest_prompts(manifest, manifest_path.parent)
             return manifest, manifest_path.parent
     return None
 
@@ -403,7 +546,9 @@ def create_job(channel: dict, story: dict) -> tuple[dict, Path]:
     for subdirectory in ("renders", "continuity", "debug"):
         (job_dir / subdirectory).mkdir(parents=True, exist_ok=True)
 
-    scene_plan = _story_scene_plan(story, META_SCENE_COUNT)
+    scene_plan = _story_scene_plan(
+        story, META_SCENE_COUNT, channel_id=channel["id"],
+    )
     episode_code = _episode_code(story, channel)
     scenes = []
     for offset, plan in enumerate(scene_plan):
@@ -429,6 +574,7 @@ def create_job(channel: dict, story: dict) -> tuple[dict, Path]:
         "channel_name": channel["name"],
         "generator": "Meta AI Create through Playwright, Meta-only",
         "schema_version": META_PROMPT_SCHEMA_VERSION,
+        "prompt_policy_version": 2,
         "episode_code": episode_code,
         "render_backend": "meta_ai",
         "status": "awaiting_meta_ai",
@@ -1111,12 +1257,99 @@ def diagnose_meta_surfaces() -> None:
                 browser.close()
 
 
-def _attach_image(page, image_path: Path) -> None:
+def _image_attachment_state(page, image_path: Path) -> dict:
+    """Return privacy-safe evidence that the selected PNG is in the composer."""
+    file_loaded = False
+    try:
+        file_loaded = bool(page.locator("input[type='file']").evaluate_all(
+            """(inputs, wanted) => inputs.some(input =>
+                Array.from(input.files || []).some(file => file.name === wanted))""",
+            image_path.name,
+        ))
+    except Exception:
+        pass
+
+    filename_visible = False
+    try:
+        filename_visible = _visible_last(
+            page.get_by_text(image_path.name, exact=True)
+        ) is not None
+    except Exception:
+        pass
+
+    marker_count = 0
+    selectors = (
+        "[data-testid*='attachment' i]",
+        "[data-testid*='upload-preview' i]",
+        "[data-testid*='media-preview' i]",
+        "button[aria-label*='remove attachment' i]",
+        "button[aria-label*='remove image' i]",
+        "img[src^='blob:']",
+        "img[src^='data:image']",
+        "form img",
+        "[data-testid*='composer' i] img",
+    )
+    for selector in selectors:
+        try:
+            locator = page.locator(selector)
+            marker_count += sum(
+                1 for index in range(locator.count())
+                if locator.nth(index).is_visible()
+            )
+        except Exception:
+            continue
+
+    uploading = False
+    try:
+        uploading = _visible_last(page.get_by_text(re.compile(
+            r"uploading|processing (?:image|attachment)|preparing (?:image|media)",
+            re.I,
+        ))) is not None
+    except Exception:
+        pass
+    return {
+        "file_loaded": file_loaded,
+        "filename_visible": filename_visible,
+        "marker_count": marker_count,
+        "uploading": uploading,
+    }
+
+
+def _wait_for_image_attachment(page, image_path: Path, baseline_markers: int,
+                               timeout_seconds: float = 45) -> bool:
+    """Require stable attachment evidence; setting an arbitrary file input is insufficient."""
+    deadline = time.monotonic() + timeout_seconds
+    stable_polls = 0
+    while time.monotonic() < deadline:
+        state = _image_attachment_state(page, image_path)
+        ready = (
+            state["file_loaded"]
+            or state["filename_visible"]
+            or state["marker_count"] > baseline_markers
+        )
+        if ready and not state["uploading"]:
+            stable_polls += 1
+            if stable_polls >= 6:
+                return True
+        else:
+            stable_polls = 0
+        page.wait_for_timeout(500)
+    return False
+
+
+def _attach_image(page, image_path: Path) -> int:
     """Upload the previous Meta video's last frame to a Meta composer.
 
     This never downloads/generates an image from an outside website.
     If a Meta surface lacks reference-image upload, fail rather than fake continuity.
     """
+    if not image_path.is_file() or image_path.stat().st_size < 1000:
+        raise MetaAIAttachmentError(
+            "Previous-scene frame is missing or unreadable before attachment."
+        )
+    baseline_markers = _image_attachment_state(
+        page, image_path,
+    )["marker_count"]
     start_frame_controls = [
         page.get_by_role("button", name=re.compile(
             r"^(?:start frame|first frame|add start frame|upload start frame|"
@@ -1169,22 +1402,38 @@ def _attach_image(page, image_path: Path) -> None:
         action = visible_control(controls)
 
     if action is None:
-        raise MetaAIAutomationError(
+        raise MetaAIAttachmentError(
             "This Meta AI video composer has no usable reference-image control. "
             "Cannot continue the story using the previous scene's final frame."
         )
 
     def set_revealed_file_input() -> bool:
         inputs = page.locator("input[type='file']")
+        ranked = []
         for index in range(inputs.count() - 1, -1, -1):
             candidate = inputs.nth(index)
             accept = (candidate.get_attribute("accept") or "").lower()
-            if accept and not any(token in accept for token in ("image", ".png", "*/*")):
+            image_accept = any(
+                token in accept for token in ("image", ".png", "*/*")
+            )
+            try:
+                contextual = bool(candidate.evaluate(
+                    """element => Boolean(element.closest(
+                        "form, [role='dialog'], [data-testid*='composer' i], " +
+                        "[data-testid*='attachment' i], [data-testid*='upload' i]"))"""
+                ))
+            except Exception:
+                contextual = False
+            if not image_accept and not contextual:
                 continue
+            ranked.append((2 if image_accept else 1, candidate))
+        for _, candidate in sorted(ranked, key=lambda item: item[0], reverse=True):
             try:
                 candidate.set_input_files(str(image_path), timeout=5_000)
-                page.wait_for_timeout(900)
-                return True
+                if _wait_for_image_attachment(
+                    page, image_path, baseline_markers,
+                ):
+                    return True
             except Exception:
                 continue
         return False
@@ -1243,8 +1492,9 @@ def _attach_image(page, image_path: Path) -> None:
             while time.monotonic() < deadline and not add.is_enabled():
                 page.wait_for_timeout(200)
             add.click(timeout=5_000)
-            page.wait_for_timeout(900)
-            return True
+            return _wait_for_image_attachment(
+                page, image_path, baseline_markers,
+            )
         except Exception:
             return False
 
@@ -1254,8 +1504,8 @@ def _attach_image(page, image_path: Path) -> None:
         hostname = None
     if hostname in {"vibes.ai", "www.vibes.ai"}:
         if upload_through_studio_picker():
-            return
-        raise MetaAIAutomationError(
+            return baseline_markers
+        raise MetaAIAttachmentError(
             "Vibes Studio could not attach the previous scene as its start frame."
         )
 
@@ -1265,12 +1515,38 @@ def _attach_image(page, image_path: Path) -> None:
         with page.expect_file_chooser(timeout=4_000) as chooser_info:
             action.click(timeout=3_000)
         chooser_info.value.set_files(str(image_path))
-        page.wait_for_timeout(900)
-        return
+        if _wait_for_image_attachment(page, image_path, baseline_markers):
+            return baseline_markers
     except Exception:
-        if set_revealed_file_input():
-            return
-    raise MetaAIAutomationError("Meta AI reference-image upload input was not found.")
+        pass
+
+    # Meta Create commonly opens an attachment menu before the file chooser.
+    # Select only an explicit image/photo option; never a broad Media sidebar.
+    menu_option = visible_control([
+        page.get_by_role("menuitem", name=re.compile(
+            r"^(?:photo|image|upload image|add photo|add image|"
+            r"upload from computer|photos and videos)$", re.I,
+        )),
+        page.get_by_role("button", name=re.compile(
+            r"^(?:photo|image|upload image|add photo|add image|"
+            r"upload from computer|photos and videos)$", re.I,
+        )),
+    ])
+    if menu_option is not None:
+        try:
+            with page.expect_file_chooser(timeout=4_000) as chooser_info:
+                menu_option.click(timeout=3_000)
+            chooser_info.value.set_files(str(image_path))
+            if _wait_for_image_attachment(page, image_path, baseline_markers):
+                return baseline_markers
+        except Exception:
+            pass
+    if set_revealed_file_input():
+        return baseline_markers
+    raise MetaAIAttachmentError(
+        "Meta AI did not confirm the previous-scene PNG in the composer; "
+        "the prompt was not submitted."
+    )
 
 
 def _media_sources(page, media_kind: str) -> list[str]:
@@ -1528,6 +1804,31 @@ def _wait_for_media(page, media_kind: str, baseline: set[str],
                 baseline_conversations = None
                 continue
         try:
+            attachment_failure = page.get_by_text(re.compile(
+                r"(?:can't|cannot) access (?:the )?attached|"
+                r"attachment (?:didn't|did not) arrive|"
+                r"re-attach (?:the )?(?:png|image)|"
+                r"workspace\s*\(?/mnt/data\)?\s+is empty|"
+                r"attached (?:png|image).{0,80}(?:missing|unavailable)",
+                re.I,
+            ))
+            if _visible_last_in_content(attachment_failure) is not None:
+                raise MetaAIAttachmentError(
+                    "Meta reported that the required previous-scene PNG was "
+                    "not attached; no video was rendered."
+                )
+            content_refusal = page.get_by_text(re.compile(
+                r"(?:can't|cannot) generate this (?:exact )?clip|"
+                r"(?:can't|cannot) create this (?:exact )?(?:clip|video)|"
+                r"centers on real,? named individuals|"
+                r"fully fictionalized,? unnamed case|"
+                r"re-render.{0,80}anonymized approach",
+                re.I,
+            ))
+            if _visible_last_in_content(content_refusal) is not None:
+                raise MetaAIContentRejected(
+                    "Meta refused the scene prompt instead of rendering video."
+                )
             unavailable = page.get_by_text(
                 re.compile(
                     rf"{re.escape(media_kind)} generation is not available|"
@@ -1669,13 +1970,23 @@ def _generate_media(context, prompt: str, target: Path, media_kind: str,
             host = urlsplit(page.url).hostname
             surface = "studio" if host in {"vibes.ai", "www.vibes.ai"} else "create"
         print(f"[MetaAI] Rendering on Meta {surface.capitalize()} (native video and audio only)")
+        attachment_baseline = None
         if attachment is not None:
-            _attach_image(page, attachment)
+            attachment_baseline = _attach_image(page, attachment)
             editor = _require_logged_in_editor(page, debug_path)
         _select_highest_studio_quality(page)
         # Changing resolution re-renders the Studio composer in some UI
         # versions; do not keep using the locator captured before that change.
         editor = _require_logged_in_editor(page, debug_path)
+        if (attachment is not None
+                and not _wait_for_image_attachment(
+                    page, attachment, int(attachment_baseline or 0),
+                    timeout_seconds=8,
+                )):
+            raise MetaAIAttachmentError(
+                "Previous-scene PNG disappeared from the composer before "
+                "submission; no generation request was sent."
+            )
         baseline = set(_media_sources(page, media_kind))
         baseline_downloads = visible_download_control_count(page)
         baseline_limits = _generation_limit_keys(page, media_kind)
@@ -1981,7 +2292,12 @@ def _ensure_meta_rendered_clips(
                         _save_manifest(manifest, job_dir)
                         last_error = None
                         break
-                    except (MetaAILoginRequired, MetaAIEditorUnavailable, MetaAIDownloadPending):
+                    except (
+                        MetaAILoginRequired,
+                        MetaAIEditorUnavailable,
+                        MetaAIDownloadPending,
+                        MetaAIContentRejected,
+                    ):
                         # No editor/login is not a transient generation failure.
                         # Do not spend four retries and do not overwrite imported login.
                         target.unlink(missing_ok=True)
@@ -2102,9 +2418,10 @@ def ensure_rendered_clips(
                 manifest, job_dir, isolated_browser=isolated_browser,
                 storage_state_path=state_path, account_slot=slot,
             )
-        except MetaAIDownloadPending:
+        except (MetaAIDownloadPending, MetaAIContentRejected):
             # The video already exists remotely. Another account would generate
-            # a duplicate and spend quota, so manual recovery remains mandatory.
+            # a duplicate and spend quota, or the same prompt was refused for
+            # content independent of account, so fail this channel immediately.
             raise
         except MetaAIAutomationError as error:
             attempted.add(state_key)
