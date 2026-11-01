@@ -98,6 +98,8 @@ class DiagnosticRecoveryTests(unittest.TestCase):
     def test_safe_validation_categories(self):
         self.assertEqual(_validation_label(Exception('scene_01.mp4 missing video or Meta-native audio; no fallback')),
                          'missing_native_audio_or_video_track')
+        self.assertEqual(_validation_label(Exception('scene_04.mp4 duplicates an earlier scene')),
+                         'duplicate_earlier_scene')
         self.assertEqual(_validation_label(Exception('sensitive https://example/?access_token=abcd')),
                          'validation_rejected')
 
@@ -113,6 +115,22 @@ class DiagnosticRecoveryTests(unittest.TestCase):
                                         self.root / 'quality' / 'scene_01.mp4', debug)
         self.assertFalse(
             debug.with_name('scene_01_download_pending.json').exists()
+        )
+
+    def test_duplicate_export_retries_instead_of_pausing_as_download_pending(self):
+        debug = self.root / 'duplicate' / 'scene_04.png'
+        error = MetaClipDownloadError(
+            'rendered duplicate',
+            rejection_reasons={'duplicate_earlier_scene'},
+        )
+        with patch.object(meta, 'save_generated_clip', side_effect=error):
+            with self.assertRaises(meta.MetaAIDuplicateScene):
+                meta._save_media_source(
+                    None, None, 'https://meta.invalid/video',
+                    self.root / 'duplicate' / 'scene_04.mp4', debug,
+                )
+        self.assertFalse(
+            debug.with_name('scene_04_download_pending.json').exists()
         )
 
 

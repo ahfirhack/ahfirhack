@@ -199,7 +199,8 @@ class ParallelChannelsTests(unittest.TestCase):
             pw.__enter__.return_value = MagicMock()
 
             def write_scene(_, __, target, ___, ____, _____, *,
-                            project_page=None, keep_project_open=False):
+                            project_page=None, keep_project_open=False,
+                            prior_clips=()):
                 project_pages.append(project_page)
                 Path(target).write_bytes(b"v" * 12000)
                 return shared_project if keep_project_open else None
@@ -210,6 +211,7 @@ class ParallelChannelsTests(unittest.TestCase):
                  patch.object(meta, "_launch_context", return_value=(context, browser)) as launch, \
                  patch.object(meta, "_generate_media", side_effect=write_scene), \
                  patch.object(meta, "_validate_meta_clip"), \
+                 patch.object(meta, "_check_scene_unique"), \
                  patch.object(meta, "_check_scene_handoff"), \
                  patch.object(meta, "_extract_last_frame"), \
                  patch.object(meta, "collect_rendered_clips", return_value=["meta-video"] * 5):

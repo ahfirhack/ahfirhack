@@ -13,6 +13,7 @@ import re
 import subprocess
 import threading
 import time
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -28,6 +29,7 @@ from config import (
     META_AI_STORAGE_STATE_FILE,
     META_AI_TIMEOUT_SECONDS,
     META_SCENE_COUNT,
+    META_MAX_DUPLICATE_DELTA,
     META_MAX_HANDOFF_DELTA,
     VIDEO_WIDTH, VIDEO_HEIGHT,
     META_SCENE_DURATION,
@@ -137,6 +139,10 @@ class MetaAIQualityUnavailable(MetaAIVideoUnavailable):
 
 class MetaAITransientError(MetaAIAutomationError):
     """Meta reported a temporary service failure that should be retried."""
+
+
+class MetaAIDuplicateScene(MetaAIAutomationError):
+    """Meta returned video content already used by an earlier scene."""
 
 
 class MetaAIDownloadPending(MetaAIAutomationError):
@@ -1579,7 +1585,7 @@ def _wait_for_media(page, media_kind: str, baseline: set[str],
 
 def _save_media_source(context, page, source: str, target: Path,
                        debug_path: Path | None = None,
-                       fresh_sources=None) -> None:
+                       fresh_sources=None, prior_clips=()) -> None:
     """Save the completed Meta clip via Download/Export, then media src fallback.
 
     File validity (10s / native audio / portrait) is checked before a target
@@ -1592,7 +1598,8 @@ def _save_media_source(context, page, source: str, target: Path,
     )
     try:
         save_generated_clip(
-            context, page, source, target, _validate_meta_clip,
+            context, page, source, target,
+            lambda path: _validate_scene_candidate(path, prior_clips),
             diagnostic_path=diagnostic_path, source_supplier=fresh_sources,
         )
     except MetaClipDownloadError as error:
@@ -1608,6 +1615,15 @@ def _save_media_source(context, page, source: str, target: Path,
             raise MetaAIQualityUnavailable(
                 "Meta rendered this scene only below the required 720x1280 "
                 "source quality; this account cannot satisfy the quality policy."
+            ) from error
+        if "duplicate_earlier_scene" in error.rejection_reasons:
+            if debug_path is not None:
+                debug_path.with_name(
+                    debug_path.stem + "_download_pending.json"
+                ).unlink(missing_ok=True)
+            raise MetaAIDuplicateScene(
+                "Meta returned video content already used by an earlier scene; "
+                "the duplicate was rejected before assembly."
             ) from error
         # The video has ALREADY been generated on Meta. Keep a durable local
         # marker so the next 6-hour run cannot accidentally spend another
@@ -1632,7 +1648,8 @@ def _take_debug_screenshot(page, path: Path) -> None:
 
 def _generate_media(context, prompt: str, target: Path, media_kind: str,
                     attachment: Path | None, debug_path: Path, *,
-                    project_page=None, keep_project_open: bool = False):
+                    project_page=None, keep_project_open: bool = False,
+                    prior_clips=()):
     """Generate one scene, optionally reusing the same Meta project page.
 
     Keeping all five scenes in one Studio project gives Meta the strongest
@@ -1671,7 +1688,8 @@ def _generate_media(context, prompt: str, target: Path, media_kind: str,
         print("[MetaAI] Video generated; saving completed clip from Meta browser")
         _save_media_source(context, page, source, target, debug_path,
                            lambda: [src for src in _media_sources(page, media_kind)
-                                    if src not in baseline])
+                                    if src not in baseline],
+                           prior_clips=prior_clips)
         print(f"[MetaAI] Clip saved and validated: {target}")
         completed = True
         return page if keep_project_open else None
@@ -1708,7 +1726,8 @@ def _validate_meta_clip(path: Path) -> None:
         raise MetaAIAutomationError(f"{path.name} missing video or Meta-native audio; no fallback")
     seconds = float(info.get("format", {}).get("duration") or 0)
     audio_seconds = float(audio.get("duration") or seconds)
-    if not 9.9 <= seconds <= 10.6 or audio_seconds < 9.8:
+    if (not 9.9 <= seconds <= 10.6
+            or not 9.8 <= audio_seconds <= 10.7):
         raise MetaAIAutomationError(
             f"{path.name} video={seconds:.2f}s, audio={audio_seconds:.2f}s; "
             "required is one complete 10s native-audio Meta video"
@@ -1721,6 +1740,58 @@ def _validate_meta_clip(path: Path) -> None:
             f"{path.name} source resolution {width}x{height} is below the "
             f"required {MIN_META_SOURCE_WIDTH}x{MIN_META_SOURCE_HEIGHT} Meta source quality"
         )
+
+
+@lru_cache(maxsize=128)
+def _scene_visual_bytes_cached(path_text: str, size: int, mtime_ns: int) -> bytes:
+    """Decode a tiny time-aligned visual signature without trusting file bytes.
+
+    Meta can remux or re-encode the same rendered result, so a SHA alone is not
+    sufficient. Twenty grayscale samples retain enough motion information to
+    identify a repeated 10-second scene while ignoring ordinary codec noise.
+    """
+    result = subprocess.run([
+        "ffmpeg", "-v", "error", "-i", path_text, "-map", "0:v:0", "-an",
+        "-vf", "trim=duration=10,setpts=PTS-STARTPTS,fps=2,"
+               "scale=36:64:flags=area,format=gray",
+        "-frames:v", "20", "-f", "rawvideo", "-pix_fmt", "gray", "-",
+    ], capture_output=True, timeout=120)
+    expected = 36 * 64 * 20
+    if result.returncode != 0 or len(result.stdout) != expected:
+        raise MetaAIAutomationError(
+            f"Cannot calculate duplicate-scene signature for {Path(path_text).name}"
+        )
+    return result.stdout
+
+
+def _scene_visual_bytes(path: Path) -> bytes:
+    resolved = path.resolve()
+    stat = resolved.stat()
+    return _scene_visual_bytes_cached(str(resolved), stat.st_size, stat.st_mtime_ns)
+
+
+def _scene_visual_delta(first: Path, second: Path) -> float:
+    """Return normalized mean pixel delta for aligned scene samples."""
+    a = _scene_visual_bytes(first)
+    b = _scene_visual_bytes(second)
+    return sum(abs(x - y) for x, y in zip(a, b)) / (len(a) * 255)
+
+
+def _check_scene_unique(previous_clips, new_scene: Path) -> None:
+    """Reject exact and near-identical video reused inside one Short."""
+    for previous in (Path(item) for item in previous_clips):
+        delta = _scene_visual_delta(previous, new_scene)
+        if delta <= META_MAX_DUPLICATE_DELTA:
+            raise MetaAIDuplicateScene(
+                f"{new_scene.name} duplicates an earlier scene "
+                f"(visual delta {delta:.4f} <= {META_MAX_DUPLICATE_DELTA:.4f})"
+            )
+
+
+def _validate_scene_candidate(path: Path, previous_clips=()) -> None:
+    """Validate media policy and episode-level uniqueness before committing."""
+    _validate_meta_clip(path)
+    _check_scene_unique(previous_clips, path)
 
 
 def _normalized_frames_filter() -> str:
@@ -1778,8 +1849,10 @@ def collect_rendered_clips(manifest: dict, job_dir: Path) -> list[str]:
     if len(manifest.get("scenes", [])) != META_SCENE_COUNT:
         raise MetaAIAutomationError("Expected exactly five 10-second scenes")
     expected = [job_dir / "renders" / scene["filename"] for scene in manifest["scenes"]]
+    accepted: list[Path] = []
     for clip in expected:
-        _validate_meta_clip(clip)
+        _validate_scene_candidate(clip, accepted)
+        accepted.append(clip)
     manifest["status"] = "ready"
     manifest["render_backend"] = "meta_ai"
     _save_manifest(manifest, job_dir)
@@ -1807,15 +1880,17 @@ def _ensure_meta_rendered_clips(
     # do not bypass QA simply because five files happen to exist.
     if all_cached:
         prior_frame = None
+        accepted_clips: list[Path] = []
         for scene in manifest["scenes"]:
             cached = renders_dir / scene["filename"]
             frame = job_dir / "continuity" / f"scene_{scene['index']:02d}_last.png"
             try:
-                _validate_meta_clip(cached)
+                _validate_scene_candidate(cached, accepted_clips)
                 if prior_frame is not None:
                     _check_scene_handoff(prior_frame, cached)
                 _extract_last_frame(cached, frame)
                 prior_frame = frame
+                accepted_clips.append(cached)
             except MetaAIAutomationError as error:
                 print(f"[MetaAI] Invalid cached scene {scene['index']}: {error}; retrying from scene")
                 for after in manifest["scenes"][scene["index"] - 1:]:
@@ -1846,17 +1921,19 @@ def _ensure_meta_rendered_clips(
         try:
             # Meta AI Create and Vibes are the ONLY allowed generators.
             prior_frame: Path | None = None
+            accepted_clips: list[Path] = []
             for scene in manifest["scenes"]:
                 target = renders_dir / scene["filename"]
                 frame_target = job_dir / "continuity" / f"scene_{scene['index']:02d}_last.png"
                 pending_export = job_dir / "debug" / f"scene_{scene['index']:02d}_download_pending.json"
                 if target.is_file() and target.stat().st_size >= 10_000:
                     try:
-                        _validate_meta_clip(target)
+                        _validate_scene_candidate(target, accepted_clips)
                         if prior_frame is not None:
                             _check_scene_handoff(prior_frame, target)
                         _extract_last_frame(target, frame_target)
                         prior_frame = frame_target
+                        accepted_clips.append(target)
                         pending_export.unlink(missing_ok=True)
                         continue
                     except MetaAIAutomationError as invalid:
@@ -1889,12 +1966,14 @@ def _ensure_meta_rendered_clips(
                             context, scene["prompt"], target, "video", attachment,
                             job_dir / "debug" / f"scene_{scene['index']:02d}.png",
                             project_page=project_page, keep_project_open=True,
+                            prior_clips=tuple(accepted_clips),
                         )
-                        _validate_meta_clip(target)
+                        _validate_scene_candidate(target, accepted_clips)
                         if prior_frame is not None:
                             _check_scene_handoff(prior_frame, target)
                         _extract_last_frame(target, frame_target)
                         prior_frame = frame_target
+                        accepted_clips.append(target)
                         successful_render = True
                         scene["rendered"] = True
                         scene["meta_account_slot"] = account_slot

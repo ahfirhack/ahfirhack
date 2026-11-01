@@ -150,6 +150,8 @@ def _wait(page, milliseconds: int) -> None:
 def _validation_label(error: Exception) -> str:
     """Use only fixed categories; exception messages can contain private URLs."""
     reason = str(error).lower()
+    if "duplicates an earlier scene" in reason:
+        return "duplicate_earlier_scene"
     if "missing video or meta-native audio" in reason:
         return "missing_native_audio_or_video_track"
     if "required is one complete 10s" in reason:

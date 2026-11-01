@@ -187,6 +187,8 @@ class MetaOnlyPolicyTests(unittest.TestCase):
         ):
             self.assertIn(secret, workflow)
         self.assertIn("META_AI_STORAGE_STATE_FILES", workflow)
+        self.assertIn('META_MAX_HANDOFF_DELTA: "0.06"', workflow)
+        self.assertIn('META_MAX_DUPLICATE_DELTA: "0.025"', workflow)
         self.assertIn('AI_HORDE_ENABLED: "false"', workflow)
         for forbidden in ("PEXELS_API_KEY", "PIXABAY_API_KEY", "ELEVENLABS_API_KEY", "DEEPGRAM_API_KEY"):
             self.assertNotIn(forbidden, workflow)
