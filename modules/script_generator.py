@@ -1324,21 +1324,30 @@ def generate_script(
         required = ("title", "scene_plan")
         missing = [key for key in required if key not in result]
         if missing:
-            _cool_down_provider(name, f"incomplete JSON (missing {', '.join(missing)})")
+            print(
+                f"[ScriptGen] {name}: incomplete JSON "
+                f"(missing {', '.join(missing)}) -> next provider"
+            )
             continue
 
         _complete_noncritical_metadata(result, niche_key)
 
         if niche_key != "kids_history" and _reject_generic_title(result["title"], niche_key):
-            _cool_down_provider(name, "generic or weak title rejected")
+            print(f"[ScriptGen] {name}: generic or weak title rejected -> next provider")
             continue
         if not _valid_visual_packaging(result, niche_key):
-            _cool_down_provider(name, "missing required factual source metadata")
+            print(
+                f"[ScriptGen] {name}: missing required factual source metadata "
+                "-> next provider"
+            )
             continue
 
         scene_plan = _normalized_scene_plan(result)
         if scene_plan is None:
-            _cool_down_provider(name, "invalid five-scene production plan")
+            print(
+                f"[ScriptGen] {name}: invalid five-scene production plan "
+                "-> next provider"
+            )
             continue
         result["scene_plan"] = scene_plan
 
@@ -1365,9 +1374,9 @@ def generate_script(
             print(f"[ScriptGen] Accepted: {wc}w | {result['title'][:50]}")
             return result
 
-        _cool_down_provider(
-            name,
-            f"{wc}w out of range ({min_words}-{max_words})",
+        print(
+            f"[ScriptGen] {name}: {wc}w out of range "
+            f"({min_words}-{max_words}) -> next provider"
         )
 
     if not allow_fallback:

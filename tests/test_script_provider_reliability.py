@@ -62,8 +62,8 @@ class PaidScriptProviderTests(unittest.TestCase):
         )
         self.assertEqual("wait=60", post.call_args.kwargs["headers"]["Prefer"])
 
-    def test_invalid_provider_is_not_retried_during_cooldown(self):
-        provider = MagicMock(return_value={"title": "missing everything else"})
+    def test_failed_provider_request_is_not_retried_during_cooldown(self):
+        provider = MagicMock(return_value=None)
         with patch.object(
             scripts,
             "_configured_provider_chain",
