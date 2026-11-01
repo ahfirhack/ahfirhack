@@ -339,7 +339,14 @@ def _build_prompt(niche: str, uniqueness_seed: str = "") -> str:
             "philosopher quotations or promise mental-health treatments."
         ),
     }
-    word_budget = "55-90" if niche_key == "kids_history" else "70-110"
+    if niche_key == "kids_history":
+        word_budget = "50-95"
+    elif niche_key == "storytelling":
+        # Five complete 10-second scenes need room for acting and reaction
+        # beats; 55 words is still eleven spoken words per scene on average.
+        word_budget = "55-110"
+    else:
+        word_budget = "55-110"
     extra_json = ', "source_url": "https://OFFICIAL-DOCUMENT-URL"' if niche_key == "tech_crime" else ""
     return f"""Write a unique original YouTube Short SCRIPT for native in-scene Meta AI video generation.
 Niche: {niche}
@@ -1278,7 +1285,7 @@ def generate_script(
     if niche_key == "kids_history":
         min_words, max_words = (50, 95)
     elif niche_key == "storytelling":
-        min_words, max_words = (65, 110)
+        min_words, max_words = (55, 110)
     else:
         min_words, max_words = (MIN_WORDS, MAX_WORDS)
 

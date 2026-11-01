@@ -87,6 +87,10 @@ class PaidScriptProviderTests(unittest.TestCase):
             scripts._reject_generic_title("What Happened Next", "storytelling")
         )
 
+    def test_story_prompt_allows_natural_reaction_time(self):
+        prompt = scripts._build_prompt("cinematic storytelling", "seed")
+        self.assertIn("Script must be 55-110 TOTAL spoken words", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
