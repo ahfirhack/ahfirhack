@@ -91,6 +91,40 @@ class PaidScriptProviderTests(unittest.TestCase):
         prompt = scripts._build_prompt("cinematic storytelling", "seed")
         self.assertIn("Script must be 55-110 TOTAL spoken words", prompt)
 
+    def test_complete_scene_plan_survives_missing_trailing_metadata(self):
+        candidate = {
+            "title": "The Silver Station Key",
+            "scene_plan": [
+                {
+                    "dialogue": (
+                        "Mara follows the silver key while the station lights "
+                        f"flicker around her {index}."
+                    ),
+                    "action": (
+                        f"Mara carries the silver key toward doorway number {index}."
+                    ),
+                    "end_frame": (
+                        f"Mara stands left, key centered, doorway {index} behind her."
+                    ),
+                }
+                for index in range(1, 6)
+            ],
+        }
+        provider = MagicMock(return_value=candidate)
+        with patch.object(
+            scripts,
+            "_configured_provider_chain",
+            return_value=[(provider, "Complete Story Provider")],
+        ):
+            result = scripts.generate_script(
+                "cinematic storytelling",
+                allow_fallback=False,
+            )
+
+        self.assertEqual(5, len(result["tags"]))
+        self.assertIn("Silver Station Key", result["search_query"])
+        self.assertGreaterEqual(len(result["script"].split()), 55)
+
 
 if __name__ == "__main__":
     unittest.main()

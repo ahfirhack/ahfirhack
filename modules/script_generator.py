@@ -439,6 +439,28 @@ def _valid_visual_packaging(result: dict, niche_key: str) -> bool:
     return source.startswith("https://") and len(source) <= 300
 
 
+def _complete_noncritical_metadata(result: dict, niche_key: str) -> None:
+    """Recover upload metadata without altering story or production content."""
+    tag_defaults = {
+        "tech_crime": ["techcrime", "cybercrime", "truecrime", "technology", "shorts"],
+        "storytelling": ["shortstory", "storytelling", "plottwist", "cinematic", "shorts"],
+        "kids_history": ["kidshistory", "history", "education", "learning", "shorts"],
+        "educational": ["stoicism", "mindset", "discipline", "selfgrowth", "shorts"],
+    }
+    tags = result.get("tags")
+    if not isinstance(tags, list) or len(tags) < 5:
+        result["tags"] = tag_defaults.get(
+            niche_key,
+            ["education", "story", "learning", "cinematic", "shorts"],
+        )
+        print("[ScriptGen] Recovered missing tags from channel metadata")
+    query = str(result.get("search_query") or "").strip()
+    if len(query.split()) < 3:
+        title = str(result.get("title") or "original cinematic story").strip()
+        result["search_query"] = f"{title} protagonist continuous cinematic setting"
+        print("[ScriptGen] Recovered missing search query from the episode title")
+
+
 def _normalized_scene_plan(result: dict) -> list[dict] | None:
     """Validate the five-row production plan returned by a text provider."""
     raw = result.get("scene_plan")
@@ -1296,11 +1318,16 @@ def generate_script(
         if not result:
             _cool_down_provider(name, "request failed or returned no script")
             continue
-        required = ("title", "script", "scene_plan", "tags", "search_query")
+        # Script is rebuilt from the validated dialogue rows below. Tags and
+        # search query are upload metadata and can be recovered safely. Never
+        # synthesize the scene plan or a factual source.
+        required = ("title", "scene_plan")
         missing = [key for key in required if key not in result]
         if missing:
             _cool_down_provider(name, f"incomplete JSON (missing {', '.join(missing)})")
             continue
+
+        _complete_noncritical_metadata(result, niche_key)
 
         if niche_key != "kids_history" and _reject_generic_title(result["title"], niche_key):
             _cool_down_provider(name, "generic or weak title rejected")
