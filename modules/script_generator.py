@@ -1,8 +1,10 @@
 """
-script_generator.py (v9 — Conversational Voice-Optimized Scripts)
+script_generator.py (v10 — Resilient Structured Script Provider Chain)
 Key changes:
 - Scripts written for VOICE (conversational, easy to listen to)
-- Discovers active models across thirteen prompt providers at runtime
+- Paid OpenAI and Replicate providers run before free-tier fallbacks
+- Failed/invalid providers cool down instead of being hammered every retry
+- Discovers active models across the remaining prompt providers at runtime
 - Shorter scripts (80-100 words = ~35s) for higher completion rate
 - Searchable titles ("How to...", "Why...") for Shorts search filter
 - Loop-friendly endings that reference the hook
@@ -13,6 +15,7 @@ import requests
 import json
 import random
 import re
+import threading
 import time
 import boto3
 from botocore.exceptions import ClientError
@@ -33,9 +36,16 @@ from config import (
     MISTRAL_API_KEY,
     NVIDIA_API_KEY,
     NOVA_API_KEY,
+    OPENAI_API_KEY,
+    OPENAI_TEXT_MODEL,
     OPENROUTER_API_KEY,
+    REPLICATE_API_KEY,
+    REPLICATE_TEXT_MODEL,
+    SCRIPT_PROVIDER_COOLDOWN_SECONDS,
 )
 
+OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+REPLICATE_PREDICTIONS_URL = "https://api.replicate.com/v1/models/{model}/predictions"
 GROQ_URL   = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models"
 GEMINI_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -55,6 +65,15 @@ COHERE_URL = "https://api.cohere.com/v2/chat"
 COHERE_MODELS_URL = "https://api.cohere.com/v1/models"
 NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 NVIDIA_MODELS_URL = "https://integrate.api.nvidia.com/v1/models"
+
+# A five-row production plan routinely exceeds the old 500-token cap once
+# actions and frame handoffs are included. Truncation produced syntactically
+# valid-looking but incomplete JSON that strict validation then rejected.
+SCRIPT_MAX_OUTPUT_TOKENS = 1800
+
+_PROVIDER_STATE_LOCK = threading.Lock()
+_PROVIDER_COOLDOWN_UNTIL: dict[str, float] = {}
+_PROVIDER_SUMMARY_PRINTED = False
 
 # ── VISUAL SEARCH HINTS FOR FOOTAGE ──
 NICHE_SEARCH_HINTS = {
@@ -467,6 +486,198 @@ def _log_provider_error(provider: str, error: Exception) -> None:
     print(f"[ScriptGen] {provider} failed ({detail})")
 
 
+def _provider_is_cooling_down(provider: str) -> bool:
+    """Avoid repeating a known-bad API call throughout the same workflow run."""
+    with _PROVIDER_STATE_LOCK:
+        until = _PROVIDER_COOLDOWN_UNTIL.get(provider, 0.0)
+        if until <= time.monotonic():
+            _PROVIDER_COOLDOWN_UNTIL.pop(provider, None)
+            return False
+        return True
+
+
+def _cool_down_provider(provider: str, reason: str) -> None:
+    with _PROVIDER_STATE_LOCK:
+        _PROVIDER_COOLDOWN_UNTIL[provider] = (
+            time.monotonic() + SCRIPT_PROVIDER_COOLDOWN_SECONDS
+        )
+    print(
+        f"[ScriptGen] {provider}: {reason}; cooling down for "
+        f"{SCRIPT_PROVIDER_COOLDOWN_SECONDS}s"
+    )
+
+
+def _script_json_schema() -> dict:
+    """Strict output contract used by providers that support JSON Schema."""
+    scene = {
+        "type": "object",
+        "properties": {
+            "dialogue": {"type": "string"},
+            "action": {"type": "string"},
+            "end_frame": {"type": "string"},
+        },
+        "required": ["dialogue", "action", "end_frame"],
+        "additionalProperties": False,
+    }
+    return {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "script": {"type": "string"},
+            "scene_plan": {
+                "type": "array",
+                "items": scene,
+                "minItems": 5,
+                "maxItems": 5,
+            },
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 5,
+                "maxItems": 5,
+            },
+            "search_query": {"type": "string"},
+            # Always present to keep the strict schema stable. Non-factual
+            # channels return an empty string; tech crime requires HTTPS later.
+            "source_url": {"type": "string"},
+        },
+        "required": [
+            "title", "script", "scene_plan", "tags", "search_query",
+            "source_url",
+        ],
+        "additionalProperties": False,
+    }
+
+
+def _openai_response_text(payload: dict) -> str:
+    """Extract output_text blocks from a raw Responses API payload."""
+    direct = payload.get("output_text")
+    if isinstance(direct, str) and direct.strip():
+        return direct
+    chunks: list[str] = []
+    for item in payload.get("output", []):
+        if not isinstance(item, dict):
+            continue
+        for block in item.get("content", []):
+            if not isinstance(block, dict):
+                continue
+            value = block.get("text")
+            if block.get("type") == "output_text" and isinstance(value, str):
+                chunks.append(value)
+    if not chunks:
+        raise RuntimeError("OpenAI response contained no output text")
+    return "".join(chunks)
+
+
+def _try_openai(prompt: str) -> dict | None:
+    """Use OpenAI Responses with a strict five-scene JSON Schema."""
+    if not OPENAI_API_KEY:
+        return None
+    try:
+        response = requests.post(
+            OPENAI_RESPONSES_URL,
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": OPENAI_TEXT_MODEL,
+                "input": prompt,
+                "max_output_tokens": SCRIPT_MAX_OUTPUT_TOKENS,
+                "text": {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "youtube_short_production_plan",
+                        "strict": True,
+                        "schema": _script_json_schema(),
+                    }
+                },
+            },
+            timeout=(10, 90),
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("status") == "incomplete":
+            raise RuntimeError("OpenAI response was incomplete")
+        result = _parse_json(_openai_response_text(payload))
+        print(f"[ScriptGen] Script via OpenAI ({OPENAI_TEXT_MODEL}, strict schema)")
+        return result
+    except Exception as error:
+        _log_provider_error("OpenAI", error)
+        return None
+
+
+def _replicate_output_text(output) -> str:
+    if isinstance(output, str):
+        return output
+    if isinstance(output, list):
+        chunks = [item for item in output if isinstance(item, str)]
+        if chunks:
+            return "".join(chunks)
+    if isinstance(output, dict):
+        for key in ("text", "output", "response"):
+            value = output.get(key)
+            if isinstance(value, str):
+                return value
+    raise RuntimeError("Replicate prediction contained no text output")
+
+
+def _try_replicate(prompt: str) -> dict | None:
+    """Run a paid Replicate text model and poll if it exceeds sync wait time."""
+    if not REPLICATE_API_KEY:
+        return None
+    if REPLICATE_TEXT_MODEL.count("/") != 1:
+        print("[ScriptGen] Replicate failed (invalid REPLICATE_TEXT_MODEL)")
+        return None
+    headers = {
+        "Authorization": f"Bearer {REPLICATE_API_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "wait=60",
+        "Cancel-After": "2m",
+    }
+    try:
+        response = requests.post(
+            REPLICATE_PREDICTIONS_URL.format(model=REPLICATE_TEXT_MODEL),
+            headers=headers,
+            json={
+                "input": {
+                    "prompt": prompt,
+                    "max_tokens": SCRIPT_MAX_OUTPUT_TOKENS,
+                    "temperature": 0.75,
+                    "top_p": 0.9,
+                }
+            },
+            timeout=(10, 70),
+        )
+        response.raise_for_status()
+        prediction = response.json()
+        deadline = time.monotonic() + 90
+        while prediction.get("status") in {"starting", "processing"}:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Replicate text prediction timed out")
+            poll_url = prediction.get("urls", {}).get("get")
+            if not poll_url:
+                raise RuntimeError("Replicate omitted its prediction polling URL")
+            time.sleep(2)
+            poll = requests.get(
+                poll_url,
+                headers={"Authorization": f"Bearer {REPLICATE_API_KEY}"},
+                timeout=(8, 25),
+            )
+            poll.raise_for_status()
+            prediction = poll.json()
+        if prediction.get("status") not in {"succeeded", "successful"}:
+            raise RuntimeError(
+                str(prediction.get("error") or "Replicate prediction failed")
+            )
+        result = _parse_json(_replicate_output_text(prediction.get("output")))
+        print(f"[ScriptGen] Script via Replicate ({REPLICATE_TEXT_MODEL})")
+        return result
+    except Exception as error:
+        _log_provider_error("Replicate", error)
+        return None
+
+
 def _ordered_text_models(
     available: list[str],
     preferred: tuple[str, ...] = (),
@@ -531,7 +742,7 @@ def _try_openai_chat_provider(
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.9,
-                "max_tokens": 500,
+                "max_tokens": SCRIPT_MAX_OUTPUT_TOKENS,
             }
             if json_mode:
                 payload["response_format"] = {"type": "json_object"}
@@ -766,7 +977,7 @@ def _try_cohere(prompt: str) -> dict | None:
                     "model": model,
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.7,
-                    "max_tokens": 500,
+                    "max_tokens": SCRIPT_MAX_OUTPUT_TOKENS,
                 }
                 if json_mode:
                     payload["response_format"] = {"type": "json_object"}
@@ -826,7 +1037,7 @@ def _try_gemini(prompt: str) -> dict | None:
             for json_mode in (True, False):
                 generation_config = {
                     "temperature": 0.9,
-                    "maxOutputTokens": 500,
+                    "maxOutputTokens": SCRIPT_MAX_OUTPUT_TOKENS,
                 }
                 if json_mode:
                     generation_config["responseMimeType"] = "application/json"
@@ -886,7 +1097,7 @@ def _try_claude(prompt: str) -> dict | None:
                 headers=headers,
                 json={
                     "model": model,
-                    "max_tokens": 500,
+                    "max_tokens": SCRIPT_MAX_OUTPUT_TOKENS,
                     "messages": [{"role": "user", "content": prompt}],
                 },
                 timeout=(8, 25),
@@ -973,7 +1184,7 @@ def _try_amazon(prompt: str) -> dict | None:
                     response = client.invoke_model(
                         modelId=candidate,
                         body=json.dumps({
-                            "max_tokens": 500,
+                            "max_tokens": SCRIPT_MAX_OUTPUT_TOKENS,
                             "messages": [{"role": "user", "content": prompt}],
                             "anthropic_version": "bedrock-2023-05-31",
                         }),
@@ -1011,6 +1222,46 @@ class ScriptGenerationError(RuntimeError):
     """No configured AI provider produced an acceptable unique script."""
 
 
+def _configured_provider_chain() -> list[tuple]:
+    """Return only providers with credentials, paid/reliable services first."""
+    candidates = [
+        (_try_openai, "OpenAI", bool(OPENAI_API_KEY)),
+        (_try_replicate, "Replicate", bool(REPLICATE_API_KEY)),
+        (_try_claude, "Claude", bool(CLAUDE_API_KEY or ANTHROPIC_API_KEY)),
+        (
+            _try_amazon,
+            "Amazon Bedrock",
+            bool(AMAZON_ACCESS_KEY and AMAZON_SECRET_KEY),
+        ),
+        (_try_gemini, "Gemini", bool(GEMINI_API_KEY)),
+        (_try_mistral, "Mistral", bool(MISTRAL_API_KEY)),
+        (_try_cohere, "Cohere", bool(COHERE_API_KEY)),
+        (_try_nvidia, "NVIDIA NIM", bool(NVIDIA_API_KEY)),
+        (
+            _try_cloudflare,
+            "Cloudflare Workers AI",
+            bool(CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID),
+        ),
+        (_try_cerebras, "Cerebras", bool(CEREBRAS_API_KEY)),
+        (_try_groq, "Groq", bool(GROQ_API_KEY)),
+        (_try_huggingface, "Hugging Face Router", bool(HF_TOKEN)),
+        (_try_openrouter, "OpenRouter Free", bool(OPENROUTER_API_KEY)),
+        (_try_nova, "Nova", bool(NOVA_API_KEY)),
+        (_try_ai_horde, "AI Horde", bool(AI_HORDE_ENABLED)),
+    ]
+    return [(fn, name) for fn, name, enabled in candidates if enabled]
+
+
+def _print_provider_summary(providers: list[tuple]) -> None:
+    global _PROVIDER_SUMMARY_PRINTED
+    with _PROVIDER_STATE_LOCK:
+        if _PROVIDER_SUMMARY_PRINTED:
+            return
+        _PROVIDER_SUMMARY_PRINTED = True
+    names = ", ".join(name for _, name in providers) or "none"
+    print(f"[ScriptGen] Configured provider chain: {names}")
+
+
 def generate_script(
     niche: str,
     *,
@@ -1019,21 +1270,8 @@ def generate_script(
     uniqueness_seed: str = "",
 ) -> dict:
     prompt = _build_prompt(niche, uniqueness_seed)
-    providers = [
-        (_try_groq, "Groq"),
-        (_try_huggingface, "Hugging Face Router"),
-        (_try_mistral, "Mistral"),
-        (_try_nvidia, "NVIDIA NIM"),
-        (_try_cloudflare, "Cloudflare Workers AI"),
-        (_try_openrouter, "OpenRouter Free"),
-        (_try_cerebras, "Cerebras"),
-        (_try_cohere, "Cohere"),
-        (_try_gemini, "Gemini"),
-        (_try_nova, "Nova"),
-        (_try_claude, "Claude"),
-        (_try_amazon, "Amazon Bedrock"),
-        (_try_ai_horde, "AI Horde"),
-    ]
+    providers = _configured_provider_chain()
+    _print_provider_summary(providers)
     niche_key = _detect_niche_key(niche)
     if niche_key == "kids_history":
         min_words, max_words = (50, 95)
@@ -1043,22 +1281,28 @@ def generate_script(
         min_words, max_words = (MIN_WORDS, MAX_WORDS)
 
     for fn, name in providers:
+        if _provider_is_cooling_down(name):
+            continue
         result = fn(prompt)
         if not result:
+            _cool_down_provider(name, "request failed or returned no script")
             continue
-        if not all(k in result for k in ("title", "script", "tags", "search_query")):
+        required = ("title", "script", "scene_plan", "tags", "search_query")
+        missing = [key for key in required if key not in result]
+        if missing:
+            _cool_down_provider(name, f"incomplete JSON (missing {', '.join(missing)})")
             continue
 
         if niche_key != "kids_history" and _reject_generic_title(result["title"], niche_key):
-            print(f"[ScriptGen] {name}: generic or weak title rejected -> next provider")
+            _cool_down_provider(name, "generic or weak title rejected")
             continue
         if not _valid_visual_packaging(result, niche_key):
-            print(f"[ScriptGen] {name}: missing required factual source metadata -> next provider")
+            _cool_down_provider(name, "missing required factual source metadata")
             continue
 
         scene_plan = _normalized_scene_plan(result)
         if scene_plan is None:
-            print(f"[ScriptGen] {name}: invalid five-scene production plan -> next provider")
+            _cool_down_provider(name, "invalid five-scene production plan")
             continue
         result["scene_plan"] = scene_plan
 
@@ -1085,7 +1329,10 @@ def generate_script(
             print(f"[ScriptGen] Accepted: {wc}w | {result['title'][:50]}")
             return result
 
-        print(f"[ScriptGen] {name}: {wc}w out of range ({min_words}-{max_words}) -> next provider")
+        _cool_down_provider(
+            name,
+            f"{wc}w out of range ({min_words}-{max_words})",
+        )
 
     if not allow_fallback:
         raise ScriptGenerationError(

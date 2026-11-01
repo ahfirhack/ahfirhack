@@ -20,6 +20,12 @@ GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY", "")
 CLAUDE_API_KEY     = os.getenv("CLAUDE_API_KEY", "")
 ANTHROPIC_API_KEY  = os.getenv("ANTHROPIC_API_KEY", CLAUDE_API_KEY)
 GROQ_API_KEY       = os.getenv("GROQ_API_KEY", "")
+OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY", "")
+OPENAI_TEXT_MODEL  = os.getenv("OPENAI_TEXT_MODEL", "gpt-6-astra").strip()
+REPLICATE_API_KEY  = os.getenv("REPLICATE_API_KEY", "")
+REPLICATE_TEXT_MODEL = os.getenv(
+    "REPLICATE_TEXT_MODEL", "meta/meta-llama-3-70b-instruct"
+).strip()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 CEREBRAS_API_KEY   = os.getenv("CEREBRAS_API_KEY", "")
 HF_TOKEN           = os.getenv("HF_TOKEN", "")
@@ -42,6 +48,9 @@ CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN", "")
 CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID", "")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 DEEPGRAM_API_KEY   = os.getenv("DEEPGRAM_API_KEY", "")
+SCRIPT_PROVIDER_COOLDOWN_SECONDS = int(
+    os.getenv("SCRIPT_PROVIDER_COOLDOWN_SECONDS", "300")
+)
 
 # Amazon Bedrock (AWS)
 AMAZON_ACCESS_KEY = os.getenv("AMAZON_ACCESS_KEY", "")

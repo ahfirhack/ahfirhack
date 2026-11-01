@@ -126,6 +126,10 @@ jobs:
 
       - name: Generate Meta-only Shorts with up to 3 parallel browser workers
         env:
+          OPENAI_API_KEY:        ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_TEXT_MODEL:     ${{ vars.OPENAI_TEXT_MODEL || 'gpt-6-astra' }}
+          REPLICATE_API_KEY:     ${{ secrets.REPLICATE_API_KEY }}
+          REPLICATE_TEXT_MODEL:  ${{ vars.REPLICATE_TEXT_MODEL || 'meta/meta-llama-3-70b-instruct' }}
           NOVA_API_KEY:          ${{ secrets.NOVA_API_KEY }}
           GROQ_API_KEY:          ${{ secrets.GROQ_API_KEY }}
           OPENROUTER_API_KEY:    ${{ secrets.OPENROUTER_API_KEY }}
