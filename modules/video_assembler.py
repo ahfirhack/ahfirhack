@@ -14,6 +14,7 @@ from config import OUTPUT_DIR, VIDEO_WIDTH, VIDEO_HEIGHT, VIDEO_CRF
 WIDTH = VIDEO_WIDTH
 HEIGHT = VIDEO_HEIGHT
 HANDOFF_BLEND_SECONDS = 0.25
+AUDIO_CROSSFADE_SECONDS = 0.25
 
 
 def _ffmpeg(args, label=""):
@@ -97,7 +98,9 @@ def assemble_meta_short(
     genuine Meta motion over 0.25 seconds. This replaces no duration and avoids
     the one-frame jump caused by the former frame-only overlay. If Meta's native
     audio track ends slightly early, only its final two-second reaction/ambience
-    tail is time-fitted. Dialogue timing remains intact.
+    tail is time-fitted. The first four native ambience tails are extended by
+    0.25 seconds and crossfaded with the following native track, keeping every
+    scene's dialogue start aligned at 10-second boundaries without silence.
 
     No third-party images, footage, overlays, soundtrack, subtitles, silence
     insertion, stock video or TTS is used.
@@ -150,7 +153,8 @@ def assemble_meta_short(
         ]
 
     filters = []
-    segments = []
+    video_segments = []
+    audio_segments = []
     for index in range(5):
         # fps before trim produces exactly 300 pictures (0..299), timestamps
         # start at zero so ffmpeg concat cannot introduce a blank scene gap.
@@ -177,18 +181,23 @@ def assemble_meta_short(
             ))
         a = f"a{index}"
         source_audio_seconds = audio_durations[index]
+        target_audio_seconds = scene_seconds + (
+            AUDIO_CROSSFADE_SECONDS if index < 4 else 0.0
+        )
         audio_base = (
             f"[{index}:a]aresample=48000,"
             f"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo"
         )
-        if source_audio_seconds < scene_seconds:
+        if source_audio_seconds < target_audio_seconds:
             # Prompts place speech before 7.5s. Preserve that timing and extend
-            # only the native reaction/ambience tail instead of padding silence.
+            # only the native reaction/ambience tail. For scenes 1-4 the extra
+            # quarter-second is consumed by the boundary crossfade, so scene N+1
+            # dialogue still begins exactly at N*10 seconds.
             tail_start = max(0.0, source_audio_seconds - 2.0)
             tail_source = source_audio_seconds - tail_start
-            tail_target = scene_seconds - tail_start
+            tail_target = target_audio_seconds - tail_start
             tempo = tail_source / tail_target
-            if not 0.85 <= tempo <= 1.0:
+            if not 0.80 <= tempo <= 1.0:
                 raise RuntimeError(
                     f"Scene {index + 1} native audio cannot be safely tail-fitted "
                     f"({source_audio_seconds:.3f}s)"
@@ -209,10 +218,20 @@ def assemble_meta_short(
             ))
         else:
             filters.append(
-                f"{audio_base},atrim=duration=10,asetpts=PTS-STARTPTS[{a}]"
+                f"{audio_base},atrim=duration={target_audio_seconds:.6f},"
+                f"asetpts=PTS-STARTPTS[{a}]"
             )
-        segments.append(f"[{v}][{a}]")
-    filters.append("".join(segments) + "concat=n=5:v=1:a=1[outv][outa]")
+        video_segments.append(f"[{v}]")
+        audio_segments.append(a)
+    filters.append("".join(video_segments) + "concat=n=5:v=1:a=0[outv]")
+    mixed_audio = audio_segments[0]
+    for index, next_audio in enumerate(audio_segments[1:], start=1):
+        output_audio = "outa" if index == 4 else f"ax{index}"
+        filters.append(
+            f"[{mixed_audio}][{next_audio}]acrossfade="
+            f"d={AUDIO_CROSSFADE_SECONDS}:c1=tri:c2=tri[{output_audio}]"
+        )
+        mixed_audio = output_audio
     _ffmpeg(
         input_args + [
             "-filter_complex", ";".join(filters),

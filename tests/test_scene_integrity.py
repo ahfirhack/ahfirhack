@@ -76,6 +76,12 @@ class SceneIntegrityTests(unittest.TestCase):
                 "xfade=transition=fade:duration=0.25:offset=0"
             ))
             self.assertNotIn("pad_dur=0.2", graph)
+            self.assertEqual(4, graph.count(
+                "acrossfade=d=0.25:c1=tri:c2=tri"
+            ))
+            self.assertIn("concat=n=5:v=1:a=0[outv]", graph)
+            self.assertNotIn("concat=n=5:v=1:a=1", graph)
+            self.assertIn("atempo=0.823045267", graph)
             self.assertIn("atempo=0.917431193", graph)
             self.assertIn("pad_dur=0.03", graph)
             self.assertEqual(5, unique.call_count)
