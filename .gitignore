@@ -11,3 +11,21 @@ meta_ai_debug*.png
 output_videos/
 temp/
 music_cache/
+
+# Meta AI session import/diagnostics (never commit)
+meta_ai_debug_login.png
+
+meta_ai_diagnostics/
+.env
+.env.*
+!.env.example
+meta_ai_storage_state.json
+.meta-ai-profile/
+meta_ai_jobs/
+meta_ai_diagnostics/
+pre_parallel_backup/
+*.mp4
+*.webm
+*.mov
+*.bak
+__pycache__/

@@ -164,11 +164,8 @@ def read_api_keys_from_environment() -> dict:
     wanted = [
         "GROQ_API_KEY", "OPENROUTER_API_KEY", "CEREBRAS_API_KEY",
         "GEMINI_API_KEY", "CLAUDE_API_KEY",
-        "ANTHROPIC_API_KEY", "PEXELS_API_KEY", "PIXABAY_API_KEY",
-        "JAMENDO_CLIENT_ID", "FREESOUND_API_KEY",
-        "YOUTUBE_API_KEY", "NOVA_API_KEY", "ELEVENLABS_API_KEY",
-        "DEEPGRAM_API_KEY", "COVERR_API_KEY", "VIDEEZY_CLIENT_ID",
-        "VIDEEZY_CLIENT_SECRET", "AMAZON_ACCESS_KEY", "AMAZON_SECRET_KEY",
+        "ANTHROPIC_API_KEY", "NOVA_API_KEY",
+        "AMAZON_ACCESS_KEY", "AMAZON_SECRET_KEY",
         "AMAZON_REGION",
     ]
     keys = {name: os.getenv(name, "").strip() for name in wanted}
@@ -251,8 +248,9 @@ def main():
     print("  2. git add .")
     print('  3. git commit -m "Add 4-channel YouTube bot"')
     print("  4. git push")
-    print("  5. Repo -> Actions -> YouTube Upload (Every 12 Hours) -> Run workflow")
-    print("\nRuns at 00:00 and 12:00 UTC. 4 channels x 2 runs = up to 8 Shorts/day.\n")
+    print("  5. Repo -> Actions -> YouTube Upload (Meta AI Only Every 8 Hours) -> Run workflow")
+    print("\nRuns at 00:13, 08:13 and 16:13 UTC: up to 12 Shorts/day.")
+    print("Publish META_AI_STORAGE_STATE_B64 with switch_meta_account.py.")
 
 
 if __name__ == "__main__":

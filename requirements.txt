@@ -1,14 +1,9 @@
-google-generativeai
-edge-tts>=7.3.1,<8
-moviepy==1.0.3
-requests
+requests>=2.32,<3
 certifi
 playwright>=1.55,<2
+Pillow>=10.4,<13
+boto3>=1.35,<2
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
 google-api-python-client
-imageio[ffmpeg]
-elevenlabs
-deepgram-sdk
-boto3

@@ -290,160 +290,55 @@ def _get_fallback(niche: str) -> dict:
 
 
 def _build_prompt(niche: str, uniqueness_seed: str = "") -> str:
+    """Produce a five-scene, 50-second idea; media is Meta AI ONLY."""
     niche_key = _detect_niche_key(niche)
-    kids_history = niche_key == "kids_history"
-    length_rule = (
-        "50-65 words, written for a 30-second narration."
-        if kids_history else (
-            "70-80 words, written for a tightly paced 30-second story."
-            if niche_key == "storytelling" else
-            "80-90 words, written for a 30-40 second narration."
-        )
-    )
-    json_length = (
-        "50-65" if kids_history else
-        ("70-80" if niche_key == "storytelling" else "80-90")
-    )
-    kids_rules = """
-KIDS' HISTORY EPISODE RULES:
-- Tell one accurate, chronological story with three clear visual beats.
-- Use simple language for ages 7-12 and no graphic violence, fear, or adult themes.
-- Milo is the recurring ten-year-old time-travel guide and the only speaker. Write the exact words Milo says; never add another narrator or character voice.
-- Group the narration into three concrete visual beats, one for each ten-second animated scene.
-- Never change Milo's appearance, clothing, age, or personality.
-""" if kids_history else ""
-    non_kids_rules = {
-        "tech_crime": """
-SILICON CRIME FILES — HIGH-STAKES TECH TRUE-CRIME RULES:
-- Cover one specific, well-documented public case. Use verifiable names, dates, amounts, technical details, and outcomes from court records, regulator findings, company filings, public hearings, or established reporting.
-- Never invent a leak, email, code fragment, quote, victim, allegation, or dollar figure. If a detail is uncertain, disputed, or unsupported, omit it and choose a better-documented case.
-- State legal status precisely: alleged, charged, settled without admission, found liable, pleaded guilty, or convicted are not interchangeable. Do not imply guilt beyond the public record.
-- Do not identify private individuals, expose personal data, glamorize offenders, give operational crime instructions, or turn victim harm into spectacle.
-- 0:00-0:05 HOOK: Lead with the largest documented contradiction, consequence, dollar amount, or technical clue. No greeting and no background setup.
-- 0:05-0:14 CASE: Name the company or public figure, the year, what was publicly claimed, and what investigators or evidence showed.
-- 0:14-0:28 EVIDENCE: Deliver two fast micro-reveals—an official document, code detail, transaction, testimony, timeline conflict, or regulatory finding. Each reveal must raise the stakes.
-- NEAR END PAYOFF: State the documented consequence or unresolved question, then loop naturally to the opening clue before the final CTA.
-- Title: 5-10 words, under 60 characters, containing the specific company, product, person, amount, or technical contradiction. Never use generic titles such as "Big Tech Exposed", "Corporate Crime", or "Tech Scam Revealed".
-- hook_overlay: 4-8 urgent words that communicate the case contradiction without unsupported clickbait.
-- hook_accent: exactly one short, visually powerful documented element—prefer a dollar amount such as "$5 BILLION" or a technical clue such as "SEMICOLON". Do not invent it.
-- evidence_label: a short public-record label such as "SEC COMPLAINT // 2018", "COURT EXHIBIT // 2022", or "PUBLIC HEARING // 2024". It must match the episode's real evidence.
-- source_url: the direct HTTPS URL of the official public record supporting the episode. Prefer a court, regulator, or government source; never return a search page or social-media post.
-- First visual query: real public evidence context where available—official filing, public hearing, dated corporate statement, court exhibit, or terminal evidence recreation. Never call a recreation a real leaked document.
-""",
-        "psychology": """
-MINDSPARK SECRETS EPISODE RULES:
-- Build the episode around one specific, scientifically grounded behavior mechanism or cognitive bias.
-- Open with a relatable moment that makes viewers recognize themselves, then explain why it happens and end with one practical action.
-- Do not diagnose viewers, promise medical results, or present weak pop-psychology claims as settled science.
-- The title must create a curiosity gap around the exact behavior. Never use generic titles such as "Mind Tricks", "Mind Blown", or "Psychology Facts".
-- Give the search query a concrete person, action, setting, and visible emotion that can support three polished visual beats.
-""",
-        "documentary": """
-PAST UNSEALED EPISODE RULES:
-- Center the episode on one real named artifact, site, person, document, invention, or event—not a generic ancient mystery.
-- Separate verified evidence from uncertainty. Never invent discoveries, exaggerate scholarly claims, or use pseudo-history as fact.
-- Structure three cinematic beats: the discovery, the strongest evidence, and the unresolved question or revealing conclusion.
-- Put the specific proper noun or place in a curiosity-driven title. Never use "The Machine That Shouldn't Exist", "Lost City", or "Ancient Secrets" by themselves.
-- Make the search query historically specific, visual, and filmable, including the subject, location or era, and an action or camera detail.
-""",
-        "storytelling": """
-STORYFUSE HIGH-RETENTION FRAMEWORK — COMPRESS THIS INTO 30 SECONDS:
-- 0:00-0:03 THE HOOK: Open on a jaw-dropping climax fragment, contradiction, impossible choice, or consequence. Withhold the explanation. No greetings or setup filler.
-- 0:03-0:10 THE INCIDENT: Name one memorable main character, reveal the triggering event, and make the stakes immediately clear.
-- 0:10-0:22 THE ESCALATION: Deliver two or three concrete micro-reveals. Each reveal must change the viewer's understanding, raise the cost, and arrive every 4-6 seconds.
-- 0:22-0:28 THE CLIMAX: Pay off the central mystery with a sharp reveal, irreversible decision, or emotionally satisfying reversal.
-- 0:28-0:30 THE LOOP/CTA: Write a punchy final line that naturally reframes the opening image, then end with "Like and Subscribe for more". Do not repeat the first sentence verbatim.
-- Use one clear protagonist, one central conflict, active verbs, concrete sensory detail, and short spoken sentences. Every sentence must advance the story.
-- Prefer original cinematic fiction about impossible choices, survival, loyalty, betrayal, sacrifice, mystery, or consequences. Never claim an invented story is true. Do not use real private people, graphic violence, cruelty, or exploitative tragedy.
-- Title: 5-9 words that tease the central contradiction without spoiling the climax. Avoid vague templates such as "What Happened Next", "You Won't Believe This", or "The Neighbor Who Regretted Everything".
-- hook_overlay: 4-8 urgent words showing the story's impossible contradiction. It must be specific to this episode, readable in two seconds, and must not spoil the reveal.
-- hook_accent: 1-4 words naming the decisive object, deadline, or clue.
-- The search query must depict the hook's exact character, action, setting, mood, lighting, and camera framing for visually coherent footage.
-""",
-        "educational": """
-STOIC RESET EPISODE RULES:
-- 0:00-0:03 HOOK: Open inside one precise modern struggle or counterintuitive consequence. Create tension immediately; never begin with a quotation or generic advice.
-- 0:03-0:12 PRINCIPLE: Explain one accurate Stoic principle in plain language and contrast what is controllable with what is not.
-- 0:12-0:26 ACTION: Give one small, observable action the viewer can take today. Show why it changes the response, not the outside event.
-- 0:26-END PAYOFF/LOOP: Deliver the emotional consequence, loop it to the opening pressure, then use the final CTA.
-- Paraphrase ancient thinkers unless a quotation is verified. Never invent or misattribute a quote, and never make mental-health treatment claims.
-- Title: 5-9 words pairing a recognizable pain point with a counterintuitive action or consequence. Never use generic titles such as "Burnout Alert", "Stoic Motivation", or "The Secret to Not Caring".
-- hook_overlay: 4-8 urgent words naming the exact modern pressure or consequence.
-- hook_accent: 1-4 words naming the Stoic principle or decisive action.
-- Use three visually distinct beats and a concrete search query showing a person taking an observable action in a modern setting.
-""",
-    }.get(niche_key, """
-EPISODE QUALITY RULES:
-- Cover one specific subject through three visually distinct beats and finish with one practical takeaway.
-- Keep every factual claim supportable and avoid generic motivation or exaggerated promises.
-""") if not kids_history else ""
-    non_kids_global_rules = """
-9. TITLE: Use 5-10 words and stay under 60 characters. Make it specific, natural, and curiosity-driven. No episode numbers, vague clickbait, all caps, or recycled title templates.
-10. VISUAL PACING: Write three connected beats that can be illustrated cleanly without dead space. Each beat must add new information and maintain forward motion.
-""" if not kids_history else ""
-    non_kids_visual_rule = """
-VISUAL SEQUENCE RULE: Also return visual_queries as exactly three concrete stock-footage searches in story order—hook, escalation, payoff. Each query must name a visible subject, action, setting, mood or lighting, and camera framing. For a story, repeat the protagonist's same visible traits in every query so the footage feels continuous.
-""" if not kids_history else ""
-    if niche_key == "tech_crime":
-        non_kids_json_field = (
-            ', "visual_queries": ["evidence hook shot", "investigation shot", "consequence shot"]'
-            ', "hook_overlay": "four-to-eight word case contradiction"'
-            ', "hook_accent": "one documented amount or technical clue"'
-            ', "evidence_label": "named public record and year"'
-            ', "source_url": "direct official HTTPS public-record URL"'
-        )
-    elif niche_key in {"storytelling", "educational"}:
-        non_kids_json_field = (
-            ', "visual_queries": ["hook shot", "escalation shot", "payoff shot"]'
-            ', "hook_overlay": "four-to-eight word episode-specific hook"'
-            ', "hook_accent": "one-to-four word object or principle"'
-        )
-    elif not kids_history:
-        non_kids_json_field = (
-            ', "visual_queries": ["hook shot", "escalation shot", "payoff shot"]'
-        )
-    else:
-        non_kids_json_field = ""
-    unique_focus = (
-        "historical subject and angle"
-        if kids_history else
-        "subject, premise, and angle"
-    )
-    uniqueness_rule = (
-        f"UNIQUE EPISODE SEED: {uniqueness_seed}. Use this seed to choose a fresh "
-        f"{unique_focus}. Never mention the seed in the output."
-        if uniqueness_seed else
-        "Choose a fresh subject and angle that is unlikely to repeat an earlier episode."
-    )
-    return f"""You are a viral YouTube Shorts scriptwriter optimized for human-like VOICE narration.
-
+    channel_rules = {
+        "tech_crime": (
+            "Silicon Crime Files: make a factual, sober tech/corporate public-record "
+            "case with accurate legal status, date, official source, identifiable "
+            "technical clue and documented outcome. Do not invent evidence, "
+            "quotes, accusations, names, or convictions. All scenes are "
+            "clearly illustrative AI reenactments, not purported documentary footage. "
+            "Include source_url linking to one official public record."
+        ),
+        "storytelling": (
+            "StoryFuse: write original cinematic live-action fiction with one "
+            "memorably described protagonist, one consistent location/time, a "
+            "high-stakes decision and five escalating scenes ending in a twist. "
+            "Characters retain unchanged outfits and voices. No real private people."
+        ),
+        "kids_history": (
+            "Epic History Kids: true, age-appropriate history for ages 7-12. "
+            "Milo is a stable-looking 10-year-old time-travel guide and the only "
+            "speaker across five continuous 3D animated scenes. Keep one place "
+            "and time period and correct facts. No gore or frightening content."
+        ),
+        "educational": (
+            "Stoic Reset: realistic continuous modern human story explaining one "
+            "correct Stoic principle through an observable choice and practical "
+            "action. One stable on-screen lead speaks throughout. Do not fake "
+            "philosopher quotations or promise mental-health treatments."
+        ),
+    }
+    word_budget = "55-90" if niche_key == "kids_history" else "70-110"
+    extra_json = ', "source_url": "https://OFFICIAL-DOCUMENT-URL"' if niche_key == "tech_crime" else ""
+    return f"""Write a unique original YouTube Short SCRIPT for native in-scene Meta AI video generation.
 Niche: {niche}
-{kids_rules}
-{non_kids_rules}
-{uniqueness_rule}
-
-VOICE-OPTIMIZED RULES:
-1. SCRIPT LENGTH: {length_rule}
-2. CONVERSATIONAL TONE: Use contractions (don't, it's). No complex jargon. Speak like a person, not a bot.
-3. THE HOOK: The first sentence must trigger an emotional response (Anger, Curiosity, or Shock).
-   - For English Learning: Start with a surprising fact or common mistake.
-   - For Stories: Start with the conflict.
-   - For Mystery: Start with a mystery.
-   - For Kids' History: Start with an imaginative "What if...?" or a surprising factual question. Keep every detail accurate, age-appropriate, and free of graphic violence.
-4. STRUCTURE: No "Welcome back" or "Thanks for watching." Get straight to the point.
-5. THE LOOP: The final sentence must flow back into the first sentence to encourage re-watches.
-6. SENTENCE LENGTH: 5-12 words max. Short sentences keep generated speech clear.
-7. CRITICAL: Do NOT repeat the first sentence at the end. The loop should be thematic, not literal repetition.
-8. CRITICAL: End with "Like and Subscribe for more" as the final call-to-action.
-{non_kids_global_rules}
-
-SEARCH QUERY RULE: The search_query must describe CLEAR VISUAL ACTION for stock footage.
-GOOD: "person studying english book", "teacher writing on whiteboard", "student taking notes"
-BAD: "success", "mystery", "hacks"
-{non_kids_visual_rule}
-
-Respond ONLY with valid JSON (no markdown, no backticks):
-{{"title": "Searchable title under 60 chars", "script": "{json_length} word voice-ready script ending with Like and Subscribe for more", "tags": ["tag1","tag2","tag3","tag4","tag5"], "search_query": "specific visual description"{non_kids_json_field}}}"""
+Rules: {channel_rules.get(niche_key, "Grounded, continuous, visually coherent story with five connected actions.")}
+Unique seed (never mention aloud): {uniqueness_seed or 'fresh original premise'}
+The final film is EXACTLY five connected 10-second scenes (50 seconds):
+00-10s: immediate hook; 10-20s: protagonist acts; 20-30s: evidence/conflict rises;
+30-40s: decisive action/reversal; 40-50s: payoff and final image.
+CRITICAL: each scene continues in the SAME place and the SAME people/wardrobe and camera direction.
+All audible words must be feasible as on-screen character dialogue, generated by Meta AI, not an off-screen narrator.
+Script must be {word_budget} TOTAL words, split naturally into five beats (roughly 10-22 spoken words per clip).
+No external voiceover, stock footage, downloaded images, music beds, captions, slide shows, forced transitions,
+intro, outro, or 'Like and Subscribe' calls to action. End on the story payoff, not a commercial prompt.
+Use no fabricated facts for historical or real-world episodes.
+Return JSON with title <= 60 characters, a single continuous script, 5 hashtag-like tags,
+a search_query that briefly describes the protagonist and setting solely as text metadata.
+Return ONLY valid JSON:
+{{"title":"unique specific title","script":"{word_budget} word chronological story","tags":["tag1","tag2","tag3","tag4","tag5"],"search_query":"protagonist action and setting"{extra_json}}}"""
 
 
 GENERIC_TITLES = {
@@ -504,88 +399,11 @@ def _reject_generic_title(title: str, niche_key: str) -> bool:
 
 
 def _valid_visual_packaging(result: dict, niche_key: str) -> bool:
-    """Require the beat metadata used to keep footage and narration aligned."""
-    if niche_key == "kids_history":
-        return True
-    visual_queries = result.get("visual_queries")
-    if (
-        not isinstance(visual_queries, list)
-        or len(visual_queries) != 3
-        or any(not isinstance(query, str) or len(query.split()) < 4 for query in visual_queries)
-    ):
-        return False
-    if niche_key not in {"tech_crime", "storytelling", "educational"}:
-        return True
-    hook_overlay = str(result.get("hook_overlay", "")).strip()
-    hook_accent = str(result.get("hook_accent", "")).strip()
-    hook_fields_valid = (
-        4 <= len(hook_overlay.split()) <= 8
-        and 1 <= len(hook_accent.split()) <= 4
-        and len(hook_overlay) <= 64
-        and len(hook_accent) <= 32
-    )
+    """No stock-media search packaging is needed for Meta-only videos."""
     if niche_key != "tech_crime":
-        return hook_fields_valid
-    evidence_label = str(result.get("evidence_label", "")).strip()
-    source_url = str(result.get("source_url", "")).strip()
-    return (
-        hook_fields_valid
-        and 2 <= len(evidence_label.split()) <= 7
-        and len(evidence_label) <= 52
-        and source_url.startswith("https://")
-        and len(source_url) <= 300
-    )
-
-
-def _repair_nonfactual_hook_packaging(result: dict, niche_key: str) -> None:
-    """Repair presentation-only visual fields without altering story claims.
-
-    Smaller/free models sometimes return a strong script while omitting the
-    camera variants or two short overlay fields. StoryFuse and Stoic Reset can
-    safely derive presentation metadata from the accepted search query/title.
-    Tech true-crime packaging is intentionally excluded because its amount,
-    clue, and evidence label must remain tied to the supporting public record.
-    """
-    if niche_key not in {"storytelling", "educational"}:
-        return
-    title_words = re.findall(r"[A-Za-z0-9$]+", str(result.get("title", "")))
-    if len(title_words) < 4:
-        return
-
-    visual_queries = result.get("visual_queries")
-    if (
-        not isinstance(visual_queries, list)
-        or len(visual_queries) != 3
-        or any(
-            not isinstance(query, str) or len(query.split()) < 4
-            for query in visual_queries
-        )
-    ):
-        base = str(result.get("search_query", "")).strip()
-        if len(base.split()) < 3:
-            base = " ".join(title_words) + " cinematic scene"
-        result["visual_queries"] = [
-            f"{base} dramatic close up",
-            f"{base} tense action medium shot",
-            f"{base} resolved consequence cinematic wide shot",
-        ]
-
-    overlay = str(result.get("hook_overlay", "")).strip()
-    overlay_words = overlay.split()
-    if not 4 <= len(overlay_words) <= 8 or len(overlay) > 64:
-        overlay_words = title_words[:8]
-        while len(" ".join(overlay_words)) > 64 and len(overlay_words) > 4:
-            overlay_words.pop()
-        result["hook_overlay"] = " ".join(overlay_words).upper()
-
-    accent = str(result.get("hook_accent", "")).strip()
-    accent_words = accent.split()
-    if not 1 <= len(accent_words) <= 4 or len(accent) > 32:
-        accent_words = title_words[-3:]
-        while len(" ".join(accent_words)) > 32 and len(accent_words) > 1:
-            accent_words.pop(0)
-        candidate = " ".join(accent_words).upper()
-        result["hook_accent"] = candidate if len(candidate) <= 32 else "KEY CLUE"
+        return True
+    source = str(result.get("source_url") or "").strip()
+    return source.startswith("https://") and len(source) <= 300
 
 
 def _parse_json(raw: str) -> dict:
@@ -1146,44 +964,18 @@ def _try_amazon(prompt: str) -> dict | None:
         return None
 
 
-# Accept scripts 30-150 words. Caption-only videos work fine at any length in this range.
-# A 36-word script = 9 caption lines = 3-4 blocks shown across a 30-second video.
-MIN_WORDS = 30
-MAX_WORDS = 90
+# Spoken native-audio words for 50 seconds in five consecutive Meta scenes.
+MIN_WORDS = 55
+MAX_WORDS = 110
 
 
 def _post_process_script(script: str) -> str:
-    """
-    Post-process the script to ensure:
-    1. First sentence is not repeated at the end
-    2. Ends with "Subscribe for more"
-    """
-    # Split into sentences
-    sentences = [s.strip() for s in script.replace("!", ".").replace("?", ".").split(".") if s.strip()]
-    if not sentences:
-        return script
-
-    # Get first sentence (normalized for comparison)
-    first_sentence = sentences[0].lower().strip()
-    first_words = set(first_sentence.split())
-
-    # Check if last sentence repeats the first
-    if len(sentences) > 1:
-        last_sentence = sentences[-1].lower().strip()
-        last_words = set(last_sentence.split())
-
-        # If more than 50% of words match, it's a repetition
-        if first_words & last_words and len(first_words & last_words) / len(first_words) > 0.5:
-            # Remove the last sentence
-            sentences = sentences[:-1]
-
-    # Ensure "Like and Subscribe for more" is at the end
-    if sentences:
-        last = sentences[-1].lower()
-        if "subscribe" not in last:
-            sentences.append("Like and Subscribe for more")
-
-    return ". ".join(sentences).replace("..", ".").strip() + "."
+    """Remove old out-of-story CTA; keep original dialogue punctuation intact."""
+    cleaned = re.sub(
+        r"\s*(?:Like and Subscribe for more|Subscribe for more|Like and subscribe)[.!?]*\s*$",
+        "", str(script).strip(), flags=re.I,
+    ).strip()
+    return cleaned
 
 
 class ScriptGenerationError(RuntimeError):
@@ -1215,9 +1007,9 @@ def generate_script(
     ]
     niche_key = _detect_niche_key(niche)
     if niche_key == "kids_history":
-        min_words, max_words = (48, 70)
+        min_words, max_words = (50, 95)
     elif niche_key == "storytelling":
-        min_words, max_words = (68, 85)
+        min_words, max_words = (65, 110)
     else:
         min_words, max_words = (MIN_WORDS, MAX_WORDS)
 
@@ -1231,9 +1023,8 @@ def generate_script(
         if niche_key != "kids_history" and _reject_generic_title(result["title"], niche_key):
             print(f"[ScriptGen] {name}: generic or weak title rejected -> next provider")
             continue
-        _repair_nonfactual_hook_packaging(result, niche_key)
         if not _valid_visual_packaging(result, niche_key):
-            print(f"[ScriptGen] {name}: incomplete visual timing pack rejected -> next provider")
+            print(f"[ScriptGen] {name}: missing required factual source metadata -> next provider")
             continue
 
         # Post-process the script

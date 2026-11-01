@@ -174,6 +174,12 @@ def upload_video(
     if not description:
         description = _build_seo_description(title, script, tags, channel_name)
     suffix_sections = []
+    if channel_config.get("media_source") == "meta_ai_browser":
+        suffix_sections.append(
+            "This Short contains original AI-generated scenes and native audio "
+            "created with Meta AI; realistic scenes are illustrative reenactments, "
+            "not authentic documentary footage."
+        )
     if source_url:
         suffix_sections.append(f"Public record used for this episode:\n{source_url}")
     credits = list(dict.fromkeys(
@@ -209,6 +215,9 @@ def upload_video(
         "status": {
             "privacyStatus": "public",
             "selfDeclaredMadeForKids": made_for_kids,
+            # API-supported disclosure of realistic synthetic content. All
+            # channels transparently mark their Meta AI-generated Shorts.
+            "containsSyntheticMedia": channel_config.get("media_source") == "meta_ai_browser",
             "embeddable": True,
             # madeShort signals to YouTube this is a Short (vertical ≤60s + #Shorts in title)
         },

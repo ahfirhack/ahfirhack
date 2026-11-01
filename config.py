@@ -8,8 +8,8 @@ NUM_VIDEOS = 1
 # Upload to YouTube after generation
 UPLOAD_TO_YOUTUBE = True
 
-# Upload every 12 hours (in seconds)
-UPLOAD_INTERVAL_HOURS = 12
+# Run every 8 hours (GitHub Actions or optional local daemon)
+UPLOAD_INTERVAL_HOURS = 8
 UPLOAD_INTERVAL_SECONDS = UPLOAD_INTERVAL_HOURS * 3600
 
 # ═══════════════════════════════════════════════════════
@@ -47,17 +47,7 @@ DEEPGRAM_API_KEY   = os.getenv("DEEPGRAM_API_KEY", "")
 AMAZON_ACCESS_KEY = os.getenv("AMAZON_ACCESS_KEY", "")
 AMAZON_SECRET_KEY = os.getenv("AMAZON_SECRET_KEY", "")
 AMAZON_REGION     = os.getenv("AMAZON_REGION", "us-east-1")
-# ═══════════════════════════════════════════════════════
-# STOCK MEDIA
-# ═══════════════════════════════════════════════════════
-PEXELS_API_KEY        = os.getenv("PEXELS_API_KEY", "")
-PIXABAY_API_KEY       = os.getenv("PIXABAY_API_KEY", "")
-COVERR_API_KEY        = os.getenv("COVERR_API_KEY", "")
-VIDEEZY_CLIENT_ID     = os.getenv("VIDEEZY_CLIENT_ID", "")
-VIDEEZY_CLIENT_SECRET = os.getenv("VIDEEZY_CLIENT_SECRET", "")
-YOUTUBE_API_KEY       = os.getenv("YOUTUBE_API_KEY", "")
-JAMENDO_CLIENT_ID     = os.getenv("JAMENDO_CLIENT_ID", "")
-FREESOUND_API_KEY     = os.getenv("FREESOUND_API_KEY", "")
+# Video and audio media source is ONLY Meta AI. No stock-media API keys.
 
 USED_VIDEOS_FILE   = "used_videos.json"
 USED_SCRIPTS_FILE  = "used_scripts.json"
@@ -76,13 +66,15 @@ MUSIC_CACHE_DIR    = "music_cache"
 META_AI_JOBS_DIR = os.getenv("META_AI_JOBS_DIR", "meta_ai_jobs")
 META_AI_CREATE_URL = os.getenv("META_AI_CREATE_URL", "https://meta.ai/create")
 META_AI_CHROME_PROFILE_DIR = os.getenv("META_AI_CHROME_PROFILE_DIR", "")
-META_AI_STORAGE_STATE_FILE = os.getenv("META_AI_STORAGE_STATE_FILE", "")
+META_AI_STORAGE_STATE_FILE = os.getenv("META_AI_STORAGE_STATE_FILE", "meta_ai_storage_state.json")
 META_AI_BROWSER_CHANNEL = os.getenv("META_AI_BROWSER_CHANNEL", "chromium")
 META_AI_HEADLESS = os.getenv("META_AI_HEADLESS", "false").lower() in {"1", "true", "yes"}
 META_AI_TIMEOUT_SECONDS = int(os.getenv("META_AI_TIMEOUT_SECONDS", "900"))
 META_AI_MAX_RETRIES = int(os.getenv("META_AI_MAX_RETRIES", "4"))
-META_SCENE_COUNT = 3
+META_SCENE_COUNT = 5
 META_SCENE_DURATION = 10
+META_SCENE_FPS = 30
+META_MAX_HANDOFF_DELTA = float(os.getenv("META_MAX_HANDOFF_DELTA", "0.22"))
 
 
 
@@ -97,7 +89,7 @@ WINDOWS_FONT_PATHS = {
 }
 
 # ── END SCREEN ───────────────────────────────────────────
-END_SCREEN_DURATION = 2   # brief CTA while the real footage remains visible
+END_SCREEN_DURATION = 0   # no CTA: preserve generated scenes completely
 
 # ── VIDEO QUALITY ───────────────────────────────────────────
 # Higher than Full HD for better quality
@@ -106,48 +98,29 @@ VIDEO_HEIGHT = 2560  # 2K height (better than 1920)
 VIDEO_BITRATE = 12_000_000  # 12 Mbps for higher quality
 VIDEO_CRF     = 16     # Lower CRF = higher quality
 
-# ── CHANNEL-SPECIFIC VOICE SETTINGS ───────────────────────
-# Using Deepgram models for each channel theme
-CHANNEL_VOICES = {
-    "channel_1": "aura-2-zeus-en",      # Tech crime: Deep, urgent, investigative
-    "channel_2": "aura-2-orpheus-en",   # Storytelling: Authoritative, cinematic tension
-    "channel_3": "aura-2-atlas-en",     # Kids history: Friendly, energetic storyteller
-    "channel_4": "aura-odysseus-en",    # Stoic: Calm, steady, philosophical
-}
+# No external voice-over / music generator in the production pipeline.
 
-# Edge TTS fallback voices (if Deepgram fails)
-EDGE_VOICES = {
-    "channel_1": "en-US-AndrewMultilingualNeural", # Natural investigative narrator
-    "channel_2": "en-GB-RyanNeural",      # British cinematic storyteller
-    "channel_3": "en-US-GuyNeural",       # Milo: fixed energetic male narrator
-    "channel_4": "en-US-ChristopherNeural", # Male, deep, authoritative
-}
-
-EDGE_VOICE_SETTINGS = {
-    "channel_1": {"rate": "+6%", "pitch": "-10Hz", "volume": "+4%"},
-    "channel_2": {"rate": "-2%", "pitch": "-4Hz", "volume": "+4%"},
-    "channel_3": {"rate": "+0%", "pitch": "+0Hz", "volume": "+0%"},
-    "channel_4": {"rate": "-4%", "pitch": "-6Hz", "volume": "+3%"},
-}
-
-# ── ALGORITHM-OPTIMIZED SCHEDULE ─────────────────────────
-# Sweet spot: 30-45 second Shorts get highest completion rates.
-# 13s and 60s are also proven high performers.
-# Target 35s voiceover + 4s end screen = ~39s total (under 60s sweet spot)
-VIDEOS_PER_CHANNEL_PER_DAY  = 1
-SHORT_DURATION_TARGET        = 30   # seconds — voiceover/music length (NOT total)
+# ── META-ONLY SCHEDULE / OUTPUT ───────────────────────────
+# Each run generates one 50-second Short per channel; GitHub Actions
+# invokes the same pipeline three times/day (every 8 hours).
+VIDEOS_PER_CHANNEL_PER_DAY  = 1  # legacy name; means one upload per channel per run
+SHORT_DURATION_TARGET        = META_SCENE_COUNT * META_SCENE_DURATION  # exactly 50 seconds
 VIDEO_DURATION_TARGET        = SHORT_DURATION_TARGET
 OUTPUT_DIR                   = "output_videos"
 TEMP_DIR                     = "temp"
-
-# Upload 1-2 hours before peak audience time (algorithm tests early viewers)
-# Peak times: US audience 6-9 PM EST → upload at 4-5 PM EST
-UPLOAD_HOUR_UTC = 6   # 21:00 UTC = 5:00 PM EST = 2:00 PM PST
 
 # ── CHANNELS ─────────────────────────────────────────────
 CHANNELS = [
     {
         "id": "channel_1",
+        "media_source": "meta_ai_browser",
+        "scene_count": META_SCENE_COUNT,
+        "scene_duration": META_SCENE_DURATION,
+        "target_duration": META_SCENE_COUNT * META_SCENE_DURATION,
+        "end_screen_duration": 0,
+        "seamless_scenes": True,
+        "native_clip_audio": True,
+        "show_overlays": False,
         "name": "Silicon Crime Files",
         "handle": "@SiliconCrimeFiles",
         "tagline": "Code. Power. Consequences.",
@@ -158,19 +131,16 @@ CHANNELS = [
         "keywords": ["tech true crime", "corporate crime", "cybercrime", "startup fraud", "tech scandals", "financial crime", "data breach"],
         "client_secrets_file": "credentials/channel1_secrets.json",
         "token_file": "credentials/channel1_token.json",
-        "use_voice": True,
-        "require_visuals": True,
-        "align_visual_beats": True,
-        "reject_synthetic_visuals": True,
-        "music_mood": "suspense",
+        "use_voice": False,
+        "use_music": False,
+
+
         "category_id": "28",
-        "hook_style": "evidence_first",
+
         "script_type": "tech_corporate_true_crime",
-        "opening_style": "tech_evidence",
-        "hook_sfx": "tech_glitch_boom",
-        "voice_provider": "edge",
-        "strict_voice": True,
-        "require_word_timestamps": True,
+
+
+
         "strict_ai_prompts": True,
         "allow_curated_fallback": False,
         "track_prompt_history": True,
@@ -179,6 +149,14 @@ CHANNELS = [
     },
     {
         "id": "channel_2",
+        "media_source": "meta_ai_browser",
+        "scene_count": META_SCENE_COUNT,
+        "scene_duration": META_SCENE_DURATION,
+        "target_duration": META_SCENE_COUNT * META_SCENE_DURATION,
+        "end_screen_duration": 0,
+        "seamless_scenes": True,
+        "native_clip_audio": True,
+        "show_overlays": False,
         "name": "StoryFuse",
         "handle": "@StoryFuseTV",
         "tagline": "Big Stakes. Sharp Twists. No Filler.",
@@ -189,18 +167,15 @@ CHANNELS = [
         "keywords": ["short stories", "storytelling", "plot twist", "cinematic stories", "mystery stories", "emotional stories"],
         "client_secrets_file": "credentials/channel2_secrets.json",
         "token_file": "credentials/channel2_token.json",
-        "use_voice": True,
-        "require_visuals": True,
-        "align_visual_beats": True,
-        "reject_synthetic_visuals": True,
-        "music_mood": "mysterious",
+        "use_voice": False,
+        "use_music": False,
+
+
         "category_id": "24",
-        "hook_style": "climax_first",
+
         "script_type": "deep_storytelling",
-        "opening_style": "story_suspense",
-        "voice_provider": "edge",
-        "strict_voice": True,
-        "require_word_timestamps": True,
+
+
         "strict_ai_prompts": True,
         "allow_curated_fallback": False,
         "track_prompt_history": True,
@@ -209,6 +184,8 @@ CHANNELS = [
     },
     {
         "id": "channel_3",
+        "scene_count": META_SCENE_COUNT,
+        "scene_duration": META_SCENE_DURATION,
         "name": "Epic History Kids",
         "handle": "@EpicHistoryKids",
         "niche": "Kid-safe historical stories for ages 7-12 about ancient civilizations, famous people, inventions, discoveries, and everyday life, told with simple vocabulary, curiosity-first hooks, accurate facts, and no graphic violence",
@@ -217,14 +194,14 @@ CHANNELS = [
         "token_file": "credentials/channel3_token.json",
         "use_voice": False,
         "use_music": False,
-        "music_mood": "playful",
+
         "category_id": "27",
-        "hook_style": "curiosity_adventure",
+
         "script_type": "kids_history",
         "made_for_kids": True,
         "media_source": "meta_ai_browser",
         "character_name": "Milo",
-        "target_duration": 30,
+        "target_duration": META_SCENE_COUNT * META_SCENE_DURATION,
         "end_screen_duration": 0,
         "seamless_scenes": True,
         "native_clip_audio": True,
@@ -236,6 +213,14 @@ CHANNELS = [
     },
     {
         "id": "channel_4",
+        "media_source": "meta_ai_browser",
+        "scene_count": META_SCENE_COUNT,
+        "scene_duration": META_SCENE_DURATION,
+        "target_duration": META_SCENE_COUNT * META_SCENE_DURATION,
+        "end_screen_duration": 0,
+        "seamless_scenes": True,
+        "native_clip_audio": True,
+        "show_overlays": False,
         "name": "Stoic Reset",
         "handle": "@StoicResetShorts",
         "tagline": "Ancient Wisdom. Modern Strength.",
@@ -246,17 +231,15 @@ CHANNELS = [
         "keywords": ["stoicism", "mental toughness", "modern philosophy", "career advice", "emotional intelligence"],
         "client_secrets_file": "credentials/channel4_secrets.json",
         "token_file": "credentials/channel4_token.json",
-        "use_voice": True,
-        "require_visuals": True,
-        "align_visual_beats": True,
-        "reject_synthetic_visuals": True,
-        "music_mood": "cinematic",
+        "use_voice": False,
+        "use_music": False,
+
+
         "category_id": "27",
-        "hook_style": "pain_point", # Start with a common modern struggle (e.g., burnout)
+
         "script_type": "educational",
-        "opening_style": "stoic_suspense",
-        "voice_provider": "edge",
-        "strict_voice": True,
+
+
         "strict_ai_prompts": True,
         "allow_curated_fallback": False,
         "track_prompt_history": True,

@@ -1,9 +1,10 @@
-name: YouTube Upload (Every 12 Hours)
+name: YouTube Upload (Meta AI Only Every 8 Hours)
 
 on:
   schedule:
-    # Run once every 23 hours: 00:00 and 12:00 UTC
-    - cron: "0 */23 * * *"
+    # Exactly every eight hours: 00:13, 08:13, 16:13 UTC.
+    # Offset avoids GitHub cron congestion at the top of each hour.
+    - cron: "13 0,8,16 * * *"
   workflow_dispatch:
     inputs:
       channel:
@@ -18,9 +19,9 @@ on:
           - "3"
           - "4"
       meta_timeout_seconds:
-        description: Meta render wait per attempt for a manual test
+        description: Max Meta render wait per individual scene (seconds)
         required: true
-        default: "300"
+        default: "600"
         type: string
 
 concurrency:
@@ -30,7 +31,7 @@ concurrency:
 jobs:
   upload:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 360
 
     permissions:
       contents: write
@@ -62,7 +63,7 @@ jobs:
           META_AI_STORAGE_STATE_B64: ${{ secrets.META_AI_STORAGE_STATE_B64 }}
         run: |
           if [ -z "$META_AI_STORAGE_STATE_B64" ]; then
-            echo "Missing META_AI_STORAGE_STATE_B64. Run python main.py --meta-login locally and publish the exported storage state as documented."
+            echo "Missing META_AI_STORAGE_STATE_B64. Import your signed-in Chrome with switch_meta_account.py --from-open-chrome, then --publish-only --repo OWNER/REPO."
             exit 1
           fi
           printf '%s' "$META_AI_STORAGE_STATE_B64" | base64 --decode | gzip --decompress > "$RUNNER_TEMP/meta-ai-storage-state.json"
@@ -102,7 +103,7 @@ jobs:
           python modules/prompt_reserve.py prompt_reserve.sqlite3 channel_3
           python modules/prompt_reserve.py prompt_reserve_channel_4.sqlite3 channel_4
 
-      - name: Run pipeline (12-hour schedule handled by GitHub Actions)
+      - name: Generate Meta-only Shorts with up to 3 parallel browser workers
         env:
           NOVA_API_KEY:          ${{ secrets.NOVA_API_KEY }}
           GROQ_API_KEY:          ${{ secrets.GROQ_API_KEY }}
@@ -121,26 +122,21 @@ jobs:
           AMAZON_ACCESS_KEY:     ${{ secrets.AMAZON_ACCESS_KEY }}
           AMAZON_SECRET_KEY:     ${{ secrets.AMAZON_SECRET_KEY }}
           AMAZON_REGION:         ${{ secrets.AMAZON_REGION || 'us-east-1' }}
-          PEXELS_API_KEY:        ${{ secrets.PEXELS_API_KEY }}
-          PIXABAY_API_KEY:       ${{ secrets.PIXABAY_API_KEY }}
-          JAMENDO_CLIENT_ID:     ${{ secrets.JAMENDO_CLIENT_ID }}
-          FREESOUND_API_KEY:     ${{ secrets.FREESOUND_API_KEY }}
-          ELEVENLABS_API_KEY:    ${{ secrets.ELEVENLABS_API_KEY }}
-          DEEPGRAM_API_KEY:      ${{ secrets.DEEPGRAM_API_KEY }}
-          COVERR_API_KEY:        ${{ secrets.COVERR_API_KEY }}
-          VIDEEZY_CLIENT_ID:     ${{ secrets.VIDEEZY_CLIENT_ID }}
-          VIDEEZY_CLIENT_SECRET: ${{ secrets.VIDEEZY_CLIENT_SECRET }}
-          YOUTUBE_API_KEY:       ${{ secrets.YOUTUBE_API_KEY }}
+
           META_AI_STORAGE_STATE_FILE: ${{ runner.temp }}/meta-ai-storage-state.json
           META_AI_JOBS_DIR:      ${{ github.workspace }}/meta_ai_jobs
           META_AI_BROWSER_CHANNEL: chromium
           META_AI_HEADLESS: "false"
-          META_AI_TIMEOUT_SECONDS: ${{ inputs.meta_timeout_seconds || '900' }}
-          META_AI_MAX_RETRIES: "2"
-          AI_HORDE_ENABLED: "true"
+          META_AI_SURFACES: "create"
+          META_CHANNEL_WORKERS: "3"
+          META_MAX_HANDOFF_DELTA: "0.22"
+          META_AI_TIMEOUT_SECONDS: ${{ inputs.meta_timeout_seconds || '600' }}
+          META_AI_MAX_RETRIES: "3"
+          AI_HORDE_ENABLED: "false"
           SELECTED_CHANNEL: ${{ inputs.channel || 'all' }}
         run: |
-          args=(--once)
+          python -c 'from config import CHANNELS; assert len(CHANNELS) == 4 and all(c.get("media_source") == "meta_ai_browser" and c.get("native_clip_audio") and not c.get("use_voice") and not c.get("use_music") for c in CHANNELS), "Meta-only configuration required"'
+          args=(--once --workers 3)
           if [ "$SELECTED_CHANNEL" != "all" ]; then
             args+=(--channel "$SELECTED_CHANNEL")
           fi
@@ -169,7 +165,7 @@ jobs:
         if: always()
         run: |
           git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@://github.com"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add used_videos.json used_scripts.json used_prompts.json \
             prompt_reserve.sqlite3 prompt_reserve_channel_1.sqlite3 \
             prompt_reserve_channel_2.sqlite3 prompt_reserve_channel_4.sqlite3 || true

@@ -1,0 +1,106 @@
+name: Meta AI Fresh Generation and Download Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenes:
+        description: "1 = test generation + download; 5 = full Meta-to-Short assembly (more credits)"
+        required: true
+        default: "1"
+        type: choice
+        options:
+          - "1"
+          - "5"
+
+# Share the production workflow's lock so the test does not compete with
+# an eight-hour production run for the same Meta session/quota.
+concurrency:
+  group: youtube-automation-persistent-browser
+  cancel-in-progress: false
+
+jobs:
+  meta-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      META_AI_STORAGE_STATE_FILE: ${{ runner.temp }}/meta-ai-storage-state.json
+      META_AI_JOBS_DIR: ${{ runner.temp }}/meta-ai-smoke-jobs
+      META_AI_BROWSER_CHANNEL: chromium
+      META_AI_HEADLESS: "false"
+      META_AI_SURFACES: "create"
+      META_AI_TIMEOUT_SECONDS: "600"
+      META_AI_DOWNLOAD_WAIT_SECONDS: "180"
+      META_AI_MAX_RETRIES: "1"
+      META_MAX_HANDOFF_DELTA: "0.22"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python requirements
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Install FFmpeg and virtual display
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg xvfb
+
+      - name: Validate smoke-test code without consuming Meta credits
+        run: python -m unittest discover -s tests -p test_meta_github_smoke.py -v
+
+      - name: Restore Meta session from Actions secret (never upload this file)
+        env:
+          META_AI_STORAGE_STATE_B64: ${{ secrets.META_AI_STORAGE_STATE_B64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          if [ -z "${META_AI_STORAGE_STATE_B64:-}" ]; then
+            echo "Missing repository secret META_AI_STORAGE_STATE_B64. Import your Meta Chrome login and publish the session before running this workflow."
+            exit 1
+          fi
+          printf '%s' "$META_AI_STORAGE_STATE_B64" | base64 --decode | gzip -dc > "$META_AI_STORAGE_STATE_FILE"
+          python - <<'PY'
+          import json, os
+          state = json.load(open(os.environ['META_AI_STORAGE_STATE_FILE'], encoding='utf-8'))
+          assert isinstance(state, dict) and isinstance(state.get('cookies'), list), 'Invalid Meta storage state'
+          print('[Smoke] Meta browser session restored (credentials are not printed)')
+          PY
+
+      - name: Generate new Meta clip, download and verify (no YouTube upload)
+        env:
+          SMOKE_SCENES: ${{ inputs.scenes }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -u -m scripts.meta_github_smoke --scenes "$SMOKE_SCENES" --artifacts meta_smoke_artifacts
+
+      - name: Display test summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f meta_smoke_artifacts/summary.md ]; then
+            cat meta_smoke_artifacts/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf 'Meta smoke test stopped before browser generation. Review step logs.\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload ONLY safe diagnostics and generated test media
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: meta-smoke-${{ github.run_id }}
+          path: meta_smoke_artifacts/
+          if-no-files-found: warn
+          retention-days: 3
