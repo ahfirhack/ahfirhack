@@ -61,6 +61,7 @@ AMAZON_REGION     = os.getenv("AMAZON_REGION", "us-east-1")
 USED_VIDEOS_FILE   = "used_videos.json"
 USED_SCRIPTS_FILE  = "used_scripts.json"
 USED_PROMPTS_FILE  = "used_prompts.json"
+UPLOADED_TITLES_FILE = os.getenv("UPLOADED_TITLES_FILE", "uploaded_titles.json")
 PROMPT_RESERVE_DB  = os.getenv("PROMPT_RESERVE_DB", "prompt_reserve.sqlite3")
 PROMPT_RESERVE_DB_CHANNEL_1 = os.getenv(
     "PROMPT_RESERVE_DB_CHANNEL_1", "prompt_reserve_channel_1.sqlite3"

@@ -119,6 +119,7 @@ jobs:
           [ -f used_videos.json ]  || echo '[]' > used_videos.json
           [ -f used_scripts.json ] || echo '[]' > used_scripts.json
           [ -f used_prompts.json ] || echo '[]' > used_prompts.json
+          [ -f uploaded_titles.json ] || echo '{"version":1,"channels":{}}' > uploaded_titles.json
           python modules/prompt_reserve.py prompt_reserve_channel_1.sqlite3 channel_1
           python modules/prompt_reserve.py prompt_reserve_channel_2.sqlite3 channel_2
           python modules/prompt_reserve.py prompt_reserve.sqlite3 channel_3
@@ -192,7 +193,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add used_videos.json used_scripts.json used_prompts.json \
+          git add used_videos.json used_scripts.json used_prompts.json uploaded_titles.json \
             prompt_reserve.sqlite3 prompt_reserve_channel_1.sqlite3 \
             prompt_reserve_channel_2.sqlite3 prompt_reserve_channel_4.sqlite3 || true
           git diff --staged --quiet || git commit -m "chore: update dedup state [skip ci]"
