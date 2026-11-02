@@ -57,7 +57,7 @@
    - Run `python auth_tokens.py` and choose the correct YouTube channel during each of the four authorization prompts. This creates four separate token files tied to the same client.
    - Publish `YOUTUBE_SHARED_SECRETS_B64` plus `CHANNEL1_TOKEN_B64` through `CHANNEL4_TOKEN_B64` with `python setup.py` or `python encode_secrets.py`.
 
-   The workflow rejects tokens issued by legacy per-channel projects before it spends Meta generation quota. The every-six-hour schedule can exceed the default YouTube Data API quota, so request a quota extension for this single project through Google's official audit process before relying on all 16 daily uploads.
+   The workflow rejects tokens issued by legacy per-channel projects before it spends Meta generation quota. Google's current [quota documentation](https://developers.google.com/youtube/data/guides/quota_and_compliance_audits) lists a default allowance of 100 `videos.insert` calls per day, so the planned maximum of 16 daily uploads is within that specific upload-call limit. If the retained project has a lower custom allocation or later needs more capacity, use the official audit and quota-extension process for this one project.
 
 6. Push the updated project code and workflows to the repository's default branch:
 
