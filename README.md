@@ -1,32 +1,41 @@
-# Meta AI-Only YouTube Shorts: Four Channels × Every 6 Hours
+# Hybrid YouTube Shorts Automation: Four Channels Every 6 Hours
 
-This project produces **one 50-second YouTube Short per channel per run**, using **exactly five 10-second Meta AI-generated videos** and FFmpeg to assemble them. No footage from Pexels, Pixabay, other stock sites, no third-party images/videos, no separate TTS narration and no outside music. Every scene carries its own native Meta audio and the previous scene's actual final frame is sent to Meta as its next visual reference.
+This repository runs one Short per selected channel, with two deliberately separate media pipelines:
 
-**Schedule:** GitHub Actions `13 */6 * * *` (UTC), up to four runs/day. Every scheduled run processes all four channels.
+- **Channels 1, 2, and 4** use the restored pre-all-Meta workflow: licensed/public sourced visuals, a fixed Edge TTS voice per channel, background music, synchronized captions, three narrative visual beats, and the legacy FFmpeg assembler.
+- **Channel 3 (Epic History Kids)** keeps the current Meta AI workflow: five consecutive 10-second portrait videos with native audio, final-frame handoffs, duplicate-scene checks, and gap-free 50-second assembly.
 
-**Channels:** Silicon Crime Files (`@SiliconCrimeFiles`), StoryFuse (`@StoryFuseTV`), Epic History Kids (`@EpicHistoryKids`), Stoic Reset (`@StoicResetShorts`).
+The GitHub Actions schedule is `13 */6 * * *` (UTC), up to four runs per day. Scheduled runs process all four channels; manual runs can select one channel.
 
-All four channels must authorize through **one shared Google Cloud OAuth project**. Separate projects used as a combined quota pool violate Google's [YouTube API policy guidance](https://developers.google.com/youtube/terms/developer-policies-guide) and are rejected by this repository. Keep one token per YouTube channel. The current documented default includes 100 `videos.insert` calls per day, so the planned maximum of 16 uploads/day is within that upload-call limit; request an official audit/extension only if the retained project needs a higher allocation.
+All four YouTube channels authorize through **one shared Google Cloud OAuth project**, with one token per YouTube channel. The repository intentionally does not use separate Google projects as a combined quota pool.
 
-Read **[META_ONLY_6_HOUR_SETUP.md](META_ONLY_6_HOUR_SETUP.md)** for full instructions, account import, GitHub secret setup, local previews and limitations.
+See [META_ONLY_6_HOUR_SETUP.md](META_ONLY_6_HOUR_SETUP.md) for the complete hybrid setup and local preview instructions.
 
-### Processing stages
+## Processing routes
 
-`Unique script from saved queue or text-only generator` → `Meta AI 5 × 10 sec portrait videos + native audio (previous last frame attached)` → `continuity / audio / duration / native 720p-source validation` → `FFmpeg frame-matched 1440×2560, 50-second assembly` → `YouTube Short upload to that channel`.
+Channels 1, 2, and 4:
 
-If Meta AI is unavailable or produces a silent, short, discontinuous, or sub-720p scene, its channel fails closed with resumable artifacts; there is **no media or voiceover fallback**. Native 720×1280 Meta clips are resized into the configured 1440×2560 final master during normal assembly.
+`unique script` → `three topic-matched sourced visual beats` + `locked voice` + `music` → `narration-timed 1440×2560 assembly and validation` → `YouTube upload`
 
-### Quick commands (PowerShell, non-administrator)
+Channel 3:
+
+`unique script` → `Meta AI 5 × 10-second portrait video/native-audio scenes` → `continuity, duplicate, duration, audio, and 720p-source validation` → `frame-matched 1440×2560 assembly` → `YouTube upload`
+
+Meta failures affect channel 3 only. A manual run for channel 1, 2, or 4 does not require a Meta browser session. Channel 3 fails closed if Meta cannot provide a valid scene; it never substitutes stock footage or external voiceover.
+
+## Quick commands
 
 ```powershell
 python -m pip install -r requirements.txt
 python -m playwright install chromium
-python switch_meta_account.py --from-open-chrome
-python test_pipeline.py 2
-python main.py --once --channel 2
+
+# No-upload previews
+python test_pipeline.py 1
+python test_pipeline.py 3
+
+# Upload one selected channel
+python main.py --once --channel 1
+python main.py --once --channel 3
 ```
 
-Up to five isolated Meta sessions are supported. The current account is slot 1
-and remains primary; see `META_ACCOUNT_SWITCH.md` to add fallback slots 2–5.
-
-The last command **uploads** to StoryFuse if all five Meta scenes pass. The preview command does not upload.
+Only channel 3 requires a signed-in Meta session. Up to five isolated Meta account sessions remain supported for its account failover; see [META_ACCOUNT_SWITCH.md](META_ACCOUNT_SWITCH.md).

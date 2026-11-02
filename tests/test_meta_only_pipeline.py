@@ -1,4 +1,4 @@
-"""Offline policy tests for 4-channel Meta-only 5x10s scheduled pipeline."""
+"""Offline policy tests for the hybrid four-channel scheduled pipeline."""
 from __future__ import annotations
 
 import json
@@ -27,53 +27,60 @@ STORY = {
 }
 
 
-class MetaOnlyPolicyTests(unittest.TestCase):
-    def test_four_channels_are_meta_only_with_native_audio(self):
+class HybridPolicyTests(unittest.TestCase):
+    def test_only_channel_three_is_meta_with_native_audio(self):
         self.assertEqual(4, len(CHANNELS))
         self.assertEqual(5, META_SCENE_COUNT)
         self.assertEqual(10, META_SCENE_DURATION)
         self.assertEqual(6, UPLOAD_INTERVAL_HOURS)
-        for channel in CHANNELS:
+        by_id = {channel["id"]: channel for channel in CHANNELS}
+        meta_channel = by_id["channel_3"]
+        self.assertEqual("meta_ai_browser", meta_channel["media_source"])
+        self.assertTrue(meta_channel["native_clip_audio"])
+        self.assertTrue(meta_channel["seamless_scenes"])
+        self.assertFalse(meta_channel["use_voice"])
+        self.assertFalse(meta_channel["use_music"])
+        self.assertFalse(meta_channel["show_overlays"])
+        self.assertEqual(50, meta_channel["target_duration"])
+        for slot in (1, 2, 4):
+            channel = by_id[f"channel_{slot}"]
             with self.subTest(channel=channel["id"]):
-                self.assertEqual("meta_ai_browser", channel["media_source"])
-                self.assertTrue(channel["native_clip_audio"])
-                self.assertTrue(channel["seamless_scenes"])
-                self.assertFalse(channel["use_voice"])
-                self.assertFalse(channel["use_music"])
-                self.assertFalse(channel["show_overlays"])
-                self.assertEqual(50, channel["target_duration"])
+                self.assertEqual("stock", channel["media_source"])
+                self.assertTrue(channel["use_voice"])
+                self.assertTrue(channel["use_music"])
+                self.assertTrue(channel["align_visual_beats"])
+                self.assertTrue(channel["reject_synthetic_visuals"])
 
-    def test_every_channel_creates_five_unique_native_audio_video_prompts(self):
-        for channel in CHANNELS:
-            with self.subTest(channel=channel["id"]):
-                with tempfile.TemporaryDirectory() as temp:
-                    with patch.object(meta, "META_AI_JOBS_DIR", temp):
-                        manifest, job_dir = meta.create_job(channel, STORY)
-                    self.assertEqual(5, len(manifest["scenes"]))
-                    self.assertEqual("meta_ai", manifest["render_backend"])
-                    self.assertTrue(manifest["native_audio"])
-                    self.assertEqual(50, manifest["target_duration_seconds"])
-                    self.assertEqual(4, manifest["schema_version"])
-                    self.assertRegex(manifest["episode_code"], r"^[A-Z]{3}-[0-9A-F]{6}$")
-                    for index, scene in enumerate(manifest["scenes"], start=1):
-                        self.assertEqual(index, scene["index"])
-                        self.assertEqual(10, scene["duration_seconds"])
-                        self.assertIn("VIDEO GENERATION ONLY", scene["prompt"])
-                        self.assertIn("NATIVE", scene["prompt"].upper())
-                        self.assertIn(f"SCENE {index}/5", scene["prompt"])
-                        self.assertIn("ABSOLUTE EPISODE TIME", scene["prompt"])
-                        self.assertIn("FIXED VOICE ID", scene["prompt"])
-                        self.assertIn("10-SECOND STORYBOARD", scene["prompt"])
-                        self.assertIn("LOCK LAST FRAME", scene["prompt"])
-                        self.assertIn("STITCH REQUIREMENT", scene["prompt"])
-                        self.assertIn("says EXACTLY", scene["prompt"])
-                        self.assertIn("never display them as text", scene["prompt"])
-                        self.assertTrue(scene["action"])
-                        self.assertTrue(scene["end_frame"])
-                        if index > 1:
-                            self.assertIn("ATTACHED", scene["prompt"])
-                            self.assertIn("previous Meta video", scene["prompt"])
-                    self.assertIn("\f", (job_dir / "meta_prompts.txt").read_text())
+    def test_channel_three_creates_five_unique_native_audio_video_prompts(self):
+        channel = next(c for c in CHANNELS if c["id"] == "channel_3")
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.object(meta, "META_AI_JOBS_DIR", temp):
+                manifest, job_dir = meta.create_job(channel, STORY)
+            self.assertEqual(5, len(manifest["scenes"]))
+            self.assertEqual("meta_ai", manifest["render_backend"])
+            self.assertTrue(manifest["native_audio"])
+            self.assertEqual(50, manifest["target_duration_seconds"])
+            self.assertEqual(4, manifest["schema_version"])
+            self.assertRegex(manifest["episode_code"], r"^[A-Z]{3}-[0-9A-F]{6}$")
+            for index, scene in enumerate(manifest["scenes"], start=1):
+                self.assertEqual(index, scene["index"])
+                self.assertEqual(10, scene["duration_seconds"])
+                self.assertIn("VIDEO GENERATION ONLY", scene["prompt"])
+                self.assertIn("NATIVE", scene["prompt"].upper())
+                self.assertIn(f"SCENE {index}/5", scene["prompt"])
+                self.assertIn("ABSOLUTE EPISODE TIME", scene["prompt"])
+                self.assertIn("FIXED VOICE ID", scene["prompt"])
+                self.assertIn("10-SECOND STORYBOARD", scene["prompt"])
+                self.assertIn("LOCK LAST FRAME", scene["prompt"])
+                self.assertIn("STITCH REQUIREMENT", scene["prompt"])
+                self.assertIn("says EXACTLY", scene["prompt"])
+                self.assertIn("never display them as text", scene["prompt"])
+                self.assertTrue(scene["action"])
+                self.assertTrue(scene["end_frame"])
+                if index > 1:
+                    self.assertIn("ATTACHED", scene["prompt"])
+                    self.assertIn("previous Meta video", scene["prompt"])
+            self.assertIn("\f", (job_dir / "meta_prompts.txt").read_text())
 
     def test_legacy_story_is_split_on_complete_sentence_boundaries(self):
         beats = meta._split_narration(STORY["script"], 5)
@@ -174,7 +181,7 @@ class MetaOnlyPolicyTests(unittest.TestCase):
             with patch.object(meta, "META_AI_JOBS_DIR", temp):
                 self.assertIsNone(meta.find_active_job("channel_3"))
 
-    def test_workflow_is_every_six_hours_all_channels_and_has_no_stock_secrets(self):
+    def test_workflow_is_every_six_hours_and_supports_both_media_paths(self):
         workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/daily_upload.yml").read_text()
         self.assertIn('cron: "13 */6 * * *"', workflow)
         self.assertIn("${{ inputs.channel || 'all' }}", workflow)
@@ -190,8 +197,14 @@ class MetaOnlyPolicyTests(unittest.TestCase):
         self.assertIn('META_MAX_HANDOFF_DELTA: "0.20"', workflow)
         self.assertIn('META_MAX_DUPLICATE_DELTA: "0.025"', workflow)
         self.assertIn('AI_HORDE_ENABLED: "false"', workflow)
-        for forbidden in ("PEXELS_API_KEY", "PIXABAY_API_KEY", "ELEVENLABS_API_KEY", "DEEPGRAM_API_KEY"):
-            self.assertNotIn(forbidden, workflow)
+        for optional_source in (
+            "PEXELS_API_KEY", "PIXABAY_API_KEY", "COVERR_API_KEY",
+            "JAMENDO_CLIENT_ID", "FREESOUND_API_KEY",
+        ):
+            self.assertIn(optional_source, workflow)
+        self.assertIn('META_CHANNEL_WORKERS: "1"', workflow)
+        self.assertIn('meta.get("media_source") == "meta_ai_browser"', workflow)
+        self.assertIn('by_id[f"channel_{slot}"].get("media_source") == "stock"', workflow)
 
 
     def test_meta_create_never_calls_vibes_eligibility(self):

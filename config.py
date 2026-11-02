@@ -56,7 +56,17 @@ SCRIPT_PROVIDER_COOLDOWN_SECONDS = int(
 AMAZON_ACCESS_KEY = os.getenv("AMAZON_ACCESS_KEY", "")
 AMAZON_SECRET_KEY = os.getenv("AMAZON_SECRET_KEY", "")
 AMAZON_REGION     = os.getenv("AMAZON_REGION", "us-east-1")
-# Video and audio media source is ONLY Meta AI. No stock-media API keys.
+
+# Licensed/public media sources used by Channels 1, 2, and 4. Every provider
+# has a key-free public-domain fallback; these keys improve match quality.
+PEXELS_API_KEY        = os.getenv("PEXELS_API_KEY", "")
+PIXABAY_API_KEY       = os.getenv("PIXABAY_API_KEY", "")
+COVERR_API_KEY        = os.getenv("COVERR_API_KEY", "")
+VIDEEZY_CLIENT_ID     = os.getenv("VIDEEZY_CLIENT_ID", "")
+VIDEEZY_CLIENT_SECRET = os.getenv("VIDEEZY_CLIENT_SECRET", "")
+YOUTUBE_API_KEY       = os.getenv("YOUTUBE_API_KEY", "")
+JAMENDO_CLIENT_ID     = os.getenv("JAMENDO_CLIENT_ID", "")
+FREESOUND_API_KEY     = os.getenv("FREESOUND_API_KEY", "")
 
 USED_VIDEOS_FILE   = "used_videos.json"
 USED_SCRIPTS_FILE  = "used_scripts.json"
@@ -107,7 +117,7 @@ WINDOWS_FONT_PATHS = {
 }
 
 # ── END SCREEN ───────────────────────────────────────────
-END_SCREEN_DURATION = 0   # no CTA: preserve generated scenes completely
+END_SCREEN_DURATION = 2   # legacy channels retain their brief visual CTA
 
 # ── VIDEO QUALITY ───────────────────────────────────────────
 # Higher than Full HD for better quality
@@ -116,13 +126,34 @@ VIDEO_HEIGHT = 2560  # 2K height (better than 1920)
 VIDEO_BITRATE = 12_000_000  # 12 Mbps for higher quality
 VIDEO_CRF     = 16     # Lower CRF = higher quality
 
-# No external voice-over / music generator in the production pipeline.
+# Locked narration settings for the restored non-Meta channels.
+CHANNEL_VOICES = {
+    "channel_1": "aura-2-zeus-en",
+    "channel_2": "aura-2-orpheus-en",
+    "channel_3": "aura-2-atlas-en",
+    "channel_4": "aura-odysseus-en",
+}
 
-# ── META-ONLY SCHEDULE / OUTPUT ───────────────────────────
-# Each run generates one 50-second Short per channel; GitHub Actions
-# invokes the same pipeline four times/day (every 6 hours).
+EDGE_VOICES = {
+    "channel_1": "en-US-AndrewMultilingualNeural",
+    "channel_2": "en-GB-RyanNeural",
+    "channel_3": "en-US-GuyNeural",
+    "channel_4": "en-US-ChristopherNeural",
+}
+
+EDGE_VOICE_SETTINGS = {
+    "channel_1": {"rate": "+6%", "pitch": "-10Hz", "volume": "+4%"},
+    "channel_2": {"rate": "-2%", "pitch": "-4Hz", "volume": "+4%"},
+    "channel_3": {"rate": "+0%", "pitch": "+0Hz", "volume": "+0%"},
+    "channel_4": {"rate": "-4%", "pitch": "-6Hz", "volume": "+3%"},
+}
+
+# ── HYBRID SCHEDULE / OUTPUT ──────────────────────────────
+# Channel 3 remains a five-scene Meta Short. Channels 1, 2, and 4 use the
+# pre-Meta sourced-media pipeline with narration and background music.
 VIDEOS_PER_CHANNEL_PER_DAY  = 1  # legacy name; means one upload per channel per run
 SHORT_DURATION_TARGET        = META_SCENE_COUNT * META_SCENE_DURATION  # exactly 50 seconds
+LEGACY_SHORT_DURATION_TARGET = 30
 VIDEO_DURATION_TARGET        = SHORT_DURATION_TARGET
 OUTPUT_DIR                   = "output_videos"
 TEMP_DIR                     = "temp"
@@ -131,14 +162,7 @@ TEMP_DIR                     = "temp"
 CHANNELS = [
     {
         "id": "channel_1",
-        "media_source": "meta_ai_browser",
-        "scene_count": META_SCENE_COUNT,
-        "scene_duration": META_SCENE_DURATION,
-        "target_duration": META_SCENE_COUNT * META_SCENE_DURATION,
-        "end_screen_duration": 0,
-        "seamless_scenes": True,
-        "native_clip_audio": True,
-        "show_overlays": False,
+        "media_source": "stock",
         "name": "Silicon Crime Files",
         "handle": "@SiliconCrimeFiles",
         "tagline": "Code. Power. Consequences.",
@@ -149,16 +173,20 @@ CHANNELS = [
         "keywords": ["tech true crime", "corporate crime", "cybercrime", "startup fraud", "tech scandals", "financial crime", "data breach"],
         "client_secrets_file": YOUTUBE_SHARED_CLIENT_SECRETS_FILE,
         "token_file": "credentials/channel1_token.json",
-        "use_voice": False,
-        "use_music": False,
-
-
+        "use_voice": True,
+        "use_music": True,
+        "require_visuals": True,
+        "align_visual_beats": True,
+        "reject_synthetic_visuals": True,
+        "music_mood": "suspense",
         "category_id": "28",
-
+        "hook_style": "evidence_first",
         "script_type": "tech_corporate_true_crime",
-
-
-
+        "opening_style": "tech_evidence",
+        "hook_sfx": "tech_glitch_boom",
+        "voice_provider": "edge",
+        "strict_voice": True,
+        "require_word_timestamps": True,
         "strict_ai_prompts": True,
         "allow_curated_fallback": False,
         "track_prompt_history": True,
@@ -167,14 +195,7 @@ CHANNELS = [
     },
     {
         "id": "channel_2",
-        "media_source": "meta_ai_browser",
-        "scene_count": META_SCENE_COUNT,
-        "scene_duration": META_SCENE_DURATION,
-        "target_duration": META_SCENE_COUNT * META_SCENE_DURATION,
-        "end_screen_duration": 0,
-        "seamless_scenes": True,
-        "native_clip_audio": True,
-        "show_overlays": False,
+        "media_source": "stock",
         "name": "StoryFuse",
         "handle": "@StoryFuseTV",
         "tagline": "Big Stakes. Sharp Twists. No Filler.",
@@ -185,15 +206,19 @@ CHANNELS = [
         "keywords": ["short stories", "storytelling", "plot twist", "cinematic stories", "mystery stories", "emotional stories"],
         "client_secrets_file": YOUTUBE_SHARED_CLIENT_SECRETS_FILE,
         "token_file": "credentials/channel2_token.json",
-        "use_voice": False,
-        "use_music": False,
-
-
+        "use_voice": True,
+        "use_music": True,
+        "require_visuals": True,
+        "align_visual_beats": True,
+        "reject_synthetic_visuals": True,
+        "music_mood": "mysterious",
         "category_id": "24",
-
+        "hook_style": "climax_first",
         "script_type": "deep_storytelling",
-
-
+        "opening_style": "story_suspense",
+        "voice_provider": "edge",
+        "strict_voice": True,
+        "require_word_timestamps": True,
         "strict_ai_prompts": True,
         "allow_curated_fallback": False,
         "track_prompt_history": True,
@@ -231,14 +256,7 @@ CHANNELS = [
     },
     {
         "id": "channel_4",
-        "media_source": "meta_ai_browser",
-        "scene_count": META_SCENE_COUNT,
-        "scene_duration": META_SCENE_DURATION,
-        "target_duration": META_SCENE_COUNT * META_SCENE_DURATION,
-        "end_screen_duration": 0,
-        "seamless_scenes": True,
-        "native_clip_audio": True,
-        "show_overlays": False,
+        "media_source": "stock",
         "name": "Stoic Reset",
         "handle": "@StoicResetShorts",
         "tagline": "Ancient Wisdom. Modern Strength.",
@@ -249,15 +267,18 @@ CHANNELS = [
         "keywords": ["stoicism", "mental toughness", "modern philosophy", "career advice", "emotional intelligence"],
         "client_secrets_file": YOUTUBE_SHARED_CLIENT_SECRETS_FILE,
         "token_file": "credentials/channel4_token.json",
-        "use_voice": False,
-        "use_music": False,
-
-
+        "use_voice": True,
+        "use_music": True,
+        "require_visuals": True,
+        "align_visual_beats": True,
+        "reject_synthetic_visuals": True,
+        "music_mood": "cinematic",
         "category_id": "27",
-
+        "hook_style": "pain_point",
         "script_type": "educational",
-
-
+        "opening_style": "stoic_suspense",
+        "voice_provider": "edge",
+        "strict_voice": True,
         "strict_ai_prompts": True,
         "allow_curated_fallback": False,
         "track_prompt_history": True,

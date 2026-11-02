@@ -1,6 +1,8 @@
-"""Meta-only YouTube Shorts pipeline: 4 channels, five 10-second scenes each.
-Only Meta AI provides video and native scene audio; FFmpeg assembles without gaps.
-No third-party footage, downloaded pictures, voice-over or external music.
+"""Hybrid four-channel YouTube Shorts pipeline.
+
+Channel 3 keeps the current five-scene Meta/native-audio workflow. Channels
+1, 2, and 4 use the pre-Meta sourced-media pipeline with locked narration,
+background music, synchronized captions, and visual-quality safeguards.
 """
 
 import os
@@ -11,17 +13,20 @@ import shutil
 import hashlib
 import json
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(__file__))
 
 from config import (
     CHANNELS, VIDEOS_PER_CHANNEL_PER_DAY, TEMP_DIR, OUTPUT_DIR,
     SHORT_DURATION_TARGET, USED_SCRIPTS_FILE, USED_PROMPTS_FILE,
-    UPLOAD_INTERVAL_SECONDS,
+    UPLOAD_INTERVAL_SECONDS, LEGACY_SHORT_DURATION_TARGET,
 )
 from modules.script_generator import ScriptGenerationError, generate_script
 from modules.video_assembler import assemble_meta_short
+from modules.legacy_video_assembler import assemble_video
+from modules.music_fetcher import generate_background_music
+from modules.video_fetcher import fetch_video_clips
+from modules.voiceover import generate_voiceover
 from modules.uploader import upload_video
 from modules.meta_ai_generator import (
     MetaAIAutomationError,
@@ -246,7 +251,7 @@ def _generate_unique_script(
 
 
 # ── Per-video pipeline ───────────────────────────────────────
-def process_video(
+def _process_meta_video(
     channel: dict,
     video_index: int,
     used_scripts: set,
@@ -254,11 +259,11 @@ def process_video(
     *,
     isolated_browser: bool = False,
 ):
-    """Fail-closed 5x10s Meta pipeline; channel jobs and browsers are isolated."""
+    """Fail-closed 5x10s Meta pipeline used only by Channel 3."""
     channel_id = channel["id"]
     channel_name = channel["name"]
     if channel.get("media_source") != "meta_ai_browser":
-        raise RuntimeError(f"Meta-only policy violation: {channel_name} is not Meta AI")
+        raise RuntimeError(f"Meta pipeline violation: {channel_name} is not Meta AI")
     required = {
         "use_voice": False,
         "use_music": False,
@@ -268,7 +273,7 @@ def process_video(
     }
     for key, expected in required.items():
         if channel.get(key) is not expected:
-            raise RuntimeError(f"Meta-only policy violation: {channel_name}.{key}")
+            raise RuntimeError(f"Meta pipeline violation: {channel_name}.{key}")
 
     print(f"\n{'='*60}")
     print(f"  {channel_name} — Meta AI only | 5 x 10 seconds | native audio")
@@ -334,10 +339,177 @@ def process_video(
     return video_id
 
 
+def _legacy_visual_queries(story: dict) -> list[str]:
+    """Return the old hook/escalation/payoff search plan when available."""
+    configured = story.get("visual_queries")
+    if isinstance(configured, list):
+        queries = [str(value).strip() for value in configured if str(value).strip()]
+        if len(queries) >= 3:
+            return queries[:3]
+
+    primary = str(story.get("search_query") or story.get("title") or "").strip()
+    rows = story.get("scene_plan")
+    if isinstance(rows, list):
+        queries = []
+        # The current generator emits five Meta scenes. For the restored stock
+        # pipeline, the first three actions become the classic three visual beats.
+        for row in rows[:3]:
+            action = str(row.get("action", "")).strip() if isinstance(row, dict) else ""
+            query = " ".join(part for part in (primary, action) if part).strip()
+            if query:
+                queries.append(query)
+        if len(queries) == 3:
+            return queries
+    # video_fetcher will derive three queries from the title/script.
+    return []
+
+
+def _consume_uploaded_reserve(channel: dict, story: dict, used_scripts: set,
+                              used_prompts: set) -> None:
+    """Delete a reserved prompt only after YouTube confirmed the upload."""
+    reserve_prompt_id = story.get("_reserve_prompt_id")
+    reserve_db = channel.get("prompt_reserve_db")
+    if reserve_prompt_id is None or not reserve_db:
+        return
+    with _STATE_LOCK:
+        consume_prompt(reserve_db, int(reserve_prompt_id))
+        used_scripts.add(_script_hash(story))
+        _save_used_scripts(used_scripts)
+        used_prompts.update(_prompt_hashes(channel["id"], story))
+        _save_used_prompts(used_prompts)
+        print(
+            f"[ScriptGen] Consumed SQLite prompt {reserve_prompt_id}; "
+            f"{available_prompt_count(reserve_db, channel['id'])} prompts remain"
+        )
+
+
+def _process_legacy_video(
+    channel: dict,
+    video_index: int,
+    used_scripts: set,
+    used_prompts: set,
+):
+    """Run the pre-all-Meta pipeline for Channels 1, 2, and 4."""
+    if channel.get("media_source", "stock") == "meta_ai_browser":
+        raise RuntimeError(f"Legacy pipeline violation: {channel['name']} is Meta AI")
+    if not channel.get("use_voice") or not channel.get("use_music"):
+        raise RuntimeError(
+            f"Legacy pipeline requires locked narration and music: {channel['name']}"
+        )
+
+    channel_id = channel["id"]
+    channel_name = channel["name"]
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_name = channel_id.replace(" ", "_")
+
+    print(f"\n{'='*60}")
+    print(f"  {channel_name} — sourced visuals | locked voice + music")
+    print(f"  Video {video_index + 1}/{VIDEOS_PER_CHANNEL_PER_DAY}")
+    print(f"{'='*60}\n")
+
+    print("[1/6] Choosing a unique story...")
+    with _STATE_LOCK:
+        story = _generate_unique_script(channel, used_scripts, used_prompts)
+    title = story["title"]
+    script = story["script"]
+    search_query = story.get("search_query") or title
+    print(f"  Title: {title}")
+
+    print("[2/6] Generating locked narration...")
+    voice_path = os.path.join(TEMP_DIR, f"{safe_name}_{timestamp}_voice.mp3")
+    generate_voiceover(
+        script,
+        voice_path,
+        channel_id=channel_id,
+        strict_voice=channel.get("strict_voice", False),
+        voice_provider=channel.get("voice_provider"),
+        require_timestamps=channel.get("require_word_timestamps", False),
+    )
+
+    print("[3/6] Preparing background music...")
+    music_path = os.path.join(TEMP_DIR, f"{safe_name}_{timestamp}_music.mp3")
+    generate_background_music(
+        channel.get("music_mood", "relaxing"),
+        LEGACY_SHORT_DURATION_TARGET,
+        music_path,
+    )
+
+    print("[4/6] Fetching three topic-matched visual beats...")
+    clips, media_credits = fetch_video_clips(
+        query=search_query,
+        num_clips=3,
+        script=script,
+        niche_keywords=channel.get("keywords", []),
+        visual_queries=_legacy_visual_queries(story),
+        include_attributions=True,
+        source_url=story.get("source_url", ""),
+    )
+
+    print("[5/6] Assembling the restored narration-timed Short...")
+    output_file = f"{safe_name}_{timestamp}.mp4"
+    video_path = assemble_video(
+        clip_paths=clips,
+        audio_path=voice_path,
+        script=script,
+        output_filename=output_file,
+        channel_name=channel_name,
+        music_path=music_path,
+        # The old assembler follows the narration length (plus its short end
+        # screen). The 30-second constant sizes music; it must not cut speech.
+        target_duration=channel.get("target_duration"),
+        end_screen_duration=channel.get("end_screen_duration"),
+        seamless_scenes=False,
+        native_clip_audio=False,
+        show_overlays=channel.get("show_overlays", True),
+        opening_style=channel.get("opening_style", "default"),
+        hook_sfx=channel.get("hook_sfx"),
+        hook_overlay=story.get("hook_overlay", ""),
+        hook_accent=story.get("hook_accent", ""),
+        evidence_label=story.get("evidence_label", ""),
+        require_visuals=channel.get("require_visuals", False),
+        align_visual_beats=channel.get("align_visual_beats", False),
+        reject_synthetic_visuals=channel.get("reject_synthetic_visuals", False),
+        require_word_timestamps=channel.get("require_word_timestamps", False),
+    )
+
+    print("[6/6] Uploading as a YouTube Short...")
+    video_id = upload_video(
+        video_path=video_path,
+        title=f"{title} #Shorts"[:100],
+        tags=list(story.get("tags", [])) + ["Shorts"],
+        channel_config=channel,
+        script=script,
+        source_url=story.get("source_url", ""),
+        media_credits=media_credits,
+    )
+    if not video_id:
+        raise RuntimeError("YouTube did not confirm an upload ID")
+    _consume_uploaded_reserve(channel, story, used_scripts, used_prompts)
+    print(f"\n  {channel_name} -> https://youtube.com/shorts/{video_id}\n")
+    return video_id
+
+
+def process_video(
+    channel: dict,
+    video_index: int,
+    used_scripts: set,
+    used_prompts: set,
+    *,
+    isolated_browser: bool = False,
+):
+    """Route only Channel 3 to Meta; restore the legacy flow for the rest."""
+    if channel.get("media_source") == "meta_ai_browser":
+        return _process_meta_video(
+            channel, video_index, used_scripts, used_prompts,
+            isolated_browser=isolated_browser,
+        )
+    return _process_legacy_video(channel, video_index, used_scripts, used_prompts)
+
+
 # ── Scheduled batch ──────────────────────────────────────────────
 def _worker_count(requested: int | None, channel_count: int) -> int:
-    """Bound the generator to three channels, never more than selected count."""
-    value = int(os.getenv("META_CHANNEL_WORKERS", "3")) if requested is None else requested
+    """Bound browser workers to the number of selected Meta channels."""
+    value = int(os.getenv("META_CHANNEL_WORKERS", "1")) if requested is None else requested
     if not 1 <= value <= 3:
         raise ValueError("--workers / META_CHANNEL_WORKERS must be 1, 2, or 3")
     return min(value, channel_count)
@@ -345,7 +517,7 @@ def _worker_count(requested: int | None, channel_count: int) -> int:
 
 def _process_channel_worker(channel: dict, used_scripts: set, used_prompts: set,
                             *, isolated_browser: bool) -> dict:
-    """Each thread owns its Playwright process and exactly one channel job."""
+    """Run one channel and convert its error into a batch result."""
     try:
         vid = process_video(
             channel, 0, used_scripts, used_prompts,
@@ -361,11 +533,10 @@ def _process_channel_worker(channel: dict, used_scripts: set, used_prompts: set,
 
 def run_channel_batch(channel_ids: set[str] | None = None,
                       *, workers: int | None = None):
-    """One video per selected channel; three Meta browser sessions in parallel.
+    """Run one video per channel using the restored hybrid routing.
 
-    Exactly one context per worker with a shared *read-only* login snapshot.
-    The fourth channel starts as soon as a worker finishes. Assembly is locked
-    separately to avoid three concurrent full-resolution video encoders.
+    The sourced-media modules use shared temporary filenames, so channels run
+    sequentially. Only Channel 3 opens a Meta browser session.
     """
     now = datetime.datetime.now()
     channels = [
@@ -374,40 +545,24 @@ def run_channel_batch(channel_ids: set[str] | None = None,
     ]
     if not channels:
         raise ValueError("No selected channel exists")
-    parallel = _worker_count(workers, len(channels))
+    meta_count = sum(
+        channel.get("media_source") == "meta_ai_browser" for channel in channels
+    )
+    meta_workers = _worker_count(workers, meta_count)
     print(f"\n  YouTube Automation — {now.strftime('%Y-%m-%d %H:%M %A')}")
-    print(f"  Channels: {len(channels)} | Meta browser workers: {parallel} | "
+    print(f"  Channels: {len(channels)} | Meta browser workers: {meta_workers} | "
           f"Videos per run: {len(channels)}\n")
-    # Avoid creating any job or spending credits without the required saved
-    # login state for parallel contexts. Normal Chrome profiles cannot be
-    # opened in three browsers simultaneously.
-    if parallel > 1:
-        from modules.meta_ai_generator import _storage_state_path
-        _storage_state_path(required=True)
 
-    # TEMP_DIR isn't used by Meta rendering, but should be cleaned only once,
-    # before launching the pool, never while another channel is rendering.
-    clean_temp()
     used_scripts = _load_used_scripts()
     used_prompts = _load_used_prompts()
     results = []
-    if parallel == 1:
-        for channel in channels:
-            results.append(_process_channel_worker(
-                channel, used_scripts, used_prompts, isolated_browser=False,
-            ))
-    else:
-        # Playwright's synchronous API is not shared across threads: each
-        # ensure_rendered_clips call independently starts sync_playwright().
-        with ThreadPoolExecutor(max_workers=parallel,
-                                thread_name_prefix="meta-channel") as pool:
-            futures = [
-                pool.submit(_process_channel_worker, channel,
-                            used_scripts, used_prompts, isolated_browser=True)
-                for channel in channels
-            ]
-            for future in as_completed(futures):
-                results.append(future.result())
+    for channel in channels:
+        # The legacy assembler/fetcher use TEMP_DIR working names. Cleaning it
+        # between sequential channels prevents cross-channel media reuse.
+        clean_temp()
+        results.append(_process_channel_worker(
+            channel, used_scripts, used_prompts, isolated_browser=False,
+        ))
 
     ok = sum(bool(row["ok"]) for row in results)
     print(f"\n{'='*60}")
@@ -453,7 +608,7 @@ def prepare_meta_job_only(channel_id: str = "channel_3") -> str:
         (item for item in CHANNELS if item["id"] == channel_id),
         None,
     )
-    if channel is None:
+    if channel is None or channel.get("media_source") != "meta_ai_browser":
         raise RuntimeError("No Meta AI browser channel is configured.")
 
     active = find_active_job(channel["id"])
@@ -495,7 +650,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--workers", type=int, default=None, choices=(1, 2, 3),
-        help="Generate up to 3 different channels simultaneously (default 3)",
+        help="Maximum Meta browser workers (the hybrid pipeline currently uses one)",
     )
     args = parser.parse_args()
 
