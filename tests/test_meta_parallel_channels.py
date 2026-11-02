@@ -1,4 +1,4 @@
-"""Offline checks for Meta account failover and hybrid channel routing."""
+"""Offline deterministic checks of 3 concurrent channels and session isolation."""
 from __future__ import annotations
 
 import importlib.util
@@ -131,67 +131,34 @@ class ParallelChannelsTests(unittest.TestCase):
                     )
             self.assertEqual(1, render.call_count)
 
-    def test_hybrid_batch_runs_sequentially_and_only_channel_three_is_meta(self):
+    def test_fanout_is_three_and_fourth_starts_when_a_worker_frees(self):
+        barrier = threading.Barrier(3, timeout=5)
+        lock = threading.Lock()
+        counters = {"active": 0, "peak": 0}
         launches = []
 
         def fake_video(ch, idx, scripts, prompts, *, isolated_browser):
-            self.assertFalse(isolated_browser)
-            launches.append((ch["id"], ch["media_source"]))
+            self.assertTrue(isolated_browser)
+            with lock:
+                counters["active"] += 1
+                counters["peak"] = max(counters["active"], counters["peak"])
+                launches.append(ch["id"])
+            if ch["id"] in ("channel_1", "channel_2", "channel_3"):
+                barrier.wait()
+            with lock:
+                counters["active"] -= 1
             return "video-" + ch["id"]
 
         with patch.object(main, "clean_temp"), \
              patch.object(main, "_load_used_scripts", return_value=set()), \
              patch.object(main, "_load_used_prompts", return_value=set()), \
+             patch.object(meta, "_storage_state_path", return_value=Path("/placeholder/session.json")), \
              patch.object(main, "process_video", side_effect=fake_video):
             self.assertTrue(main.run_channel_batch(workers=3))
 
-        self.assertEqual(
-            [
-                ("channel_1", "stock"),
-                ("channel_2", "stock"),
-                ("channel_3", "meta_ai_browser"),
-                ("channel_4", "stock"),
-            ],
-            launches,
-        )
-
-    def test_process_video_routes_only_channel_three_to_meta(self):
-        stock = next(channel for channel in main.CHANNELS if channel["id"] == "channel_1")
-        meta_channel = next(channel for channel in main.CHANNELS if channel["id"] == "channel_3")
-        with patch.object(main, "_process_legacy_video", return_value="legacy") as legacy, \
-             patch.object(main, "_process_meta_video", return_value="meta") as meta_process:
-            self.assertEqual("legacy", main.process_video(stock, 0, set(), set()))
-            self.assertEqual("meta", main.process_video(meta_channel, 0, set(), set()))
-        legacy.assert_called_once()
-        meta_process.assert_called_once()
-
-    def test_restored_legacy_pipeline_uses_three_beats_voice_and_music(self):
-        channel = next(ch for ch in main.CHANNELS if ch["id"] == "channel_1")
-        story = {
-            "title": "Documented Test Case",
-            "script": "A documented case moves from the first clue to the final ruling.",
-            "tags": ["technology"],
-            "search_query": "documented technology case",
-            "scene_plan": [
-                {"action": "show the first clue"},
-                {"action": "follow the investigation"},
-                {"action": "show the court ruling"},
-            ],
-        }
-        with patch.object(main, "_generate_unique_script", return_value=story), \
-             patch.object(main, "generate_voiceover", return_value="voice.mp3") as voice, \
-             patch.object(main, "generate_background_music", return_value="music.mp3") as music, \
-             patch.object(main, "fetch_video_clips", return_value=(["a", "b", "c"], [])) as fetch, \
-             patch.object(main, "assemble_video", return_value="short.mp4") as assemble, \
-             patch.object(main, "upload_video", return_value="youtube-id"):
-            result = main._process_legacy_video(channel, 0, set(), set())
-        self.assertEqual("youtube-id", result)
-        self.assertEqual("edge", voice.call_args.kwargs["voice_provider"])
-        self.assertEqual(main.LEGACY_SHORT_DURATION_TARGET, music.call_args.args[1])
-        self.assertEqual(3, fetch.call_args.kwargs["num_clips"])
-        self.assertEqual(3, len(fetch.call_args.kwargs["visual_queries"]))
-        self.assertIsNone(assemble.call_args.kwargs["target_duration"])
-        self.assertTrue(assemble.call_args.kwargs["align_visual_beats"])
+        self.assertEqual(3, counters["peak"])
+        self.assertEqual(0, counters["active"])
+        self.assertCountEqual(launches, [f"channel_{i}" for i in range(1, 5)])
 
     def test_one_failure_does_not_cancel_other_channels(self):
         launches = []
@@ -205,9 +172,10 @@ class ParallelChannelsTests(unittest.TestCase):
         with patch.object(main, "clean_temp"), \
              patch.object(main, "_load_used_scripts", return_value=set()), \
              patch.object(main, "_load_used_prompts", return_value=set()), \
+             patch.object(meta, "_storage_state_path", return_value=Path("/placeholder/session.json")), \
              patch.object(main, "process_video", side_effect=fake_video):
             self.assertFalse(main.run_channel_batch(workers=3))
-        self.assertEqual([f"channel_{i}" for i in range(1, 5)], launches)
+        self.assertCountEqual(launches, [f"channel_{i}" for i in range(1, 5)])
 
     def test_isolated_generator_does_not_write_to_shared_login_file(self):
         with tempfile.TemporaryDirectory() as root:
@@ -264,39 +232,36 @@ class ParallelChannelsTests(unittest.TestCase):
             self.assertIsNone(launch.call_args.args[1])
             state_path.assert_called_once_with(required=True)
 
-    def test_preview_keeps_channel_2_only(self):
-        with patch.object(test_pipeline, "test_channel", return_value="preview.mp4") as worker, \
-             patch.object(test_pipeline.os.path, "exists", return_value=False), \
-             patch.object(test_pipeline.os, "makedirs"):
+    def test_preview_has_parallel_cli_and_keeps_channel_2_only(self):
+        with patch.object(test_pipeline, "_preview_worker", return_value={
+            "channel": "StoryFuse", "ok": True, "output": "preview.mp4",
+        }) as worker:
             self.assertEqual(0, test_pipeline.main(["2"]))
             self.assertEqual(1, worker.call_count)
             self.assertEqual("StoryFuse", worker.call_args.args[0]["name"])
             self.assertFalse(worker.call_args.kwargs["isolated_browser"])
 
-    def test_legacy_channel_does_not_require_a_meta_session(self):
+    def test_parallel_requires_saved_session_before_spending_credits(self):
         with patch.object(meta, "_storage_state_path", side_effect=meta.MetaAIAutomationError("no session")), \
-             patch.object(main, "clean_temp"), \
-             patch.object(main, "_load_used_scripts", return_value=set()), \
-             patch.object(main, "_load_used_prompts", return_value=set()), \
-             patch.object(main, "process_video", return_value="legacy-id") as generate:
-            self.assertTrue(main.run_channel_batch({"channel_1"}, workers=3))
-            generate.assert_called_once()
+             patch.object(main, "process_video") as generate:
+            with self.assertRaisesRegex(meta.MetaAIAutomationError, "no session"):
+                main.run_channel_batch(workers=3)
+            generate.assert_not_called()
 
     def test_worker_count_capped_to_three(self):
         self.assertEqual(3, main._worker_count(3, 4))
         self.assertEqual(2, main._worker_count(3, 2))
         self.assertEqual(1, main._worker_count(3, 1))
-        self.assertEqual(0, main._worker_count(3, 0))
         for requested in (0, -1, 4, 100):
             with self.subTest(requested=requested), self.assertRaises(ValueError):
                 main._worker_count(requested, 4)
 
-    def test_workflow_uses_one_meta_window_and_keeps_6_hour_cron(self):
+    def test_workflow_enables_three_windows_and_keeps_6_hour_cron(self):
         text = (Path(__file__).parents[1] / ".github/workflows/daily_upload.yml").read_text()
         self.assertIn('cron: "13 */6 * * *"', text)
-        self.assertIn('META_CHANNEL_WORKERS: "1"', text)
+        self.assertIn('META_CHANNEL_WORKERS: "3"', text)
         self.assertIn('META_AI_SURFACES: "create"', text)
-        self.assertIn('args=(--once --workers 1)', text)
+        self.assertIn('args=(--once --workers 3)', text)
 
 
 if __name__ == "__main__":

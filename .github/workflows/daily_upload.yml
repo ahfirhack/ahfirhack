@@ -1,4 +1,4 @@
-name: YouTube Upload (Hybrid Every 6 Hours)
+name: YouTube Upload (Meta AI Only Every 6 Hours)
 
 on:
   schedule:
@@ -60,17 +60,12 @@ jobs:
 
       - name: Restore Meta AI browser session
         env:
-          SELECTED_CHANNEL: ${{ inputs.channel || 'all' }}
           META_AI_STORAGE_STATE_B64: ${{ secrets.META_AI_STORAGE_STATE_B64 }}
           META_AI_STORAGE_STATE_2_B64: ${{ secrets.META_AI_STORAGE_STATE_2_B64 }}
           META_AI_STORAGE_STATE_3_B64: ${{ secrets.META_AI_STORAGE_STATE_3_B64 }}
           META_AI_STORAGE_STATE_4_B64: ${{ secrets.META_AI_STORAGE_STATE_4_B64 }}
           META_AI_STORAGE_STATE_5_B64: ${{ secrets.META_AI_STORAGE_STATE_5_B64 }}
         run: |
-          if [ "$SELECTED_CHANNEL" != "all" ] && [ "$SELECTED_CHANNEL" != "3" ]; then
-            echo "Channel $SELECTED_CHANNEL uses the restored sourced-media pipeline; Meta login is not required."
-            exit 0
-          fi
           if [ -z "$META_AI_STORAGE_STATE_B64" ]; then
             echo "Missing META_AI_STORAGE_STATE_B64. Import your signed-in Chrome with switch_meta_account.py --from-open-chrome, then --publish-only --repo OWNER/REPO."
             exit 1
@@ -158,7 +153,7 @@ jobs:
           python modules/prompt_reserve.py prompt_reserve.sqlite3 channel_3
           python modules/prompt_reserve.py prompt_reserve_channel_4.sqlite3 channel_4
 
-      - name: Generate hybrid Shorts (Meta only for channel 3)
+      - name: Generate Meta-only Shorts with up to 3 parallel browser workers
         env:
           OPENAI_API_KEY:        ${{ secrets.OPENAI_API_KEY }}
           OPENAI_TEXT_MODEL:     ${{ vars.OPENAI_TEXT_MODEL || 'gpt-6-astra' }}
@@ -182,22 +177,13 @@ jobs:
           AMAZON_SECRET_KEY:     ${{ secrets.AMAZON_SECRET_KEY }}
           AMAZON_REGION:         ${{ secrets.AMAZON_REGION || 'us-east-1' }}
 
-          PEXELS_API_KEY:        ${{ secrets.PEXELS_API_KEY }}
-          PIXABAY_API_KEY:       ${{ secrets.PIXABAY_API_KEY }}
-          COVERR_API_KEY:        ${{ secrets.COVERR_API_KEY }}
-          VIDEEZY_CLIENT_ID:     ${{ secrets.VIDEEZY_CLIENT_ID }}
-          VIDEEZY_CLIENT_SECRET: ${{ secrets.VIDEEZY_CLIENT_SECRET }}
-          YOUTUBE_API_KEY:       ${{ secrets.YOUTUBE_API_KEY }}
-          JAMENDO_CLIENT_ID:     ${{ secrets.JAMENDO_CLIENT_ID }}
-          FREESOUND_API_KEY:     ${{ secrets.FREESOUND_API_KEY }}
-
           META_AI_STORAGE_STATE_FILE: ${{ runner.temp }}/meta-ai-account-1.json
           META_AI_STORAGE_STATE_FILES: ${{ runner.temp }}/meta-ai-account-1.json,${{ runner.temp }}/meta-ai-account-2.json,${{ runner.temp }}/meta-ai-account-3.json,${{ runner.temp }}/meta-ai-account-4.json,${{ runner.temp }}/meta-ai-account-5.json
           META_AI_JOBS_DIR:      ${{ github.workspace }}/meta_ai_jobs
           META_AI_BROWSER_CHANNEL: chromium
           META_AI_HEADLESS: "false"
           META_AI_SURFACES: "create"
-          META_CHANNEL_WORKERS: "1"
+          META_CHANNEL_WORKERS: "3"
           # Reject gross resets; bridgeable Meta reframing is made frame-exact in assembly.
           META_MAX_HANDOFF_DELTA: "0.20"
           # Near-identical normalized scene video is never accepted twice.
@@ -207,25 +193,8 @@ jobs:
           AI_HORDE_ENABLED: "false"
           SELECTED_CHANNEL: ${{ inputs.channel || 'all' }}
         run: |
-          python - <<'PY'
-          from config import CHANNELS
-          assert len(CHANNELS) == 4, "Exactly four channels are required"
-          by_id = {channel["id"]: channel for channel in CHANNELS}
-          meta = by_id["channel_3"]
-          assert (
-              meta.get("media_source") == "meta_ai_browser"
-              and meta.get("native_clip_audio")
-              and not meta.get("use_voice")
-              and not meta.get("use_music")
-          ), "Channel 3 must use Meta native video/audio"
-          assert all(
-              by_id[f"channel_{slot}"].get("media_source") == "stock"
-              and by_id[f"channel_{slot}"].get("use_voice")
-              and by_id[f"channel_{slot}"].get("use_music")
-              for slot in (1, 2, 4)
-          ), "Channels 1, 2, and 4 must use the restored sourced-media pipeline"
-          PY
-          args=(--once --workers 1)
+          python -c 'from config import CHANNELS; assert len(CHANNELS) == 4 and all(c.get("media_source") == "meta_ai_browser" and c.get("native_clip_audio") and not c.get("use_voice") and not c.get("use_music") for c in CHANNELS), "Meta-only configuration required"'
+          args=(--once --workers 3)
           if [ "$SELECTED_CHANNEL" != "all" ]; then
             args+=(--channel "$SELECTED_CHANNEL")
           fi

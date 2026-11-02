@@ -1,6 +1,5 @@
 requests>=2.32,<3
 certifi
-edge-tts>=7.3.1,<8
 playwright>=1.55,<2
 Pillow>=10.4,<13
 boto3>=1.35,<2

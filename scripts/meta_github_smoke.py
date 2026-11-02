@@ -39,7 +39,7 @@ from modules.meta_ai_generator import (
 )
 from modules.video_assembler import assemble_meta_short
 
-# A synthetic browser-render scenario: no third-party script writer/API key required.
+# A synthetic StoryFuse scenario: no third-party script writer/API key required.
 STORY = (
     "At midnight Mara found a train ticket dated tomorrow. "
     "The platform was empty except for a man watching the station clock. "
@@ -196,9 +196,9 @@ def run_smoke(scene_count: int, artifact_root: Path) -> bool:
         # The session comes exclusively from the GitHub Actions secret.
         _storage_state_path(required=True)
         account_slots = _storage_state_slots(required=True)
-        channel = next(c for c in CHANNELS if c["id"] == "channel_3")
+        channel = next(c for c in CHANNELS if c["id"] == "channel_2")
         if channel.get("media_source") != "meta_ai_browser":
-            raise RuntimeError("Epic History Kids is not configured for Meta media")
+            raise RuntimeError("StoryFuse channel is not configured for Meta-only media")
         story = {"title": "Meta GitHub fresh generation and download smoke test", "script": STORY}
         manifest, job_dir = create_job(channel, story)
         print(f"[Smoke] New isolated job created; generating {scene_count} scene(s), no YouTube upload", flush=True)

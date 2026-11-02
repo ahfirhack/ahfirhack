@@ -1,91 +1,81 @@
-# Hybrid four-channel setup (every 6 hours)
+# Meta AI ONLY: four YouTube channels, every 6 hours
 
-The filename is retained so existing links continue to work. The production pipeline is now hybrid:
+**Scope**: video and native audio generation occur **only at Meta AI**. Script/story ideas may still come from the existing text-only script generators or saved SQLite prompt reserves. Video assembly is local FFmpeg. No stock footage, downloaded external pictures, external TTS, music, AI Horde images, captions or forced end screens.
 
-| Channel | Media pipeline | Audio | Output |
-|---|---|---|---|
-| 1 — Silicon Crime Files | Licensed/public sourced visuals | Locked Edge voice + music | Narration-timed Short |
-| 2 — StoryFuse | Licensed/public sourced visuals | Locked Edge voice + music | Narration-timed Short |
-| 3 — Epic History Kids | Meta AI Create, five connected scenes | Meta native scene audio | 50-second Short |
-| 4 — Stoic Reset | Licensed/public sourced visuals | Locked Edge voice + music | Narration-timed Short |
+## What happens per GitHub Actions run
 
-## Install locally
+1. Select one unique story from each of the four channel-specific prompt queues/text generators.
+2. Meta AI Create (the only production surface) generates **five portrait 10-second clips** with native speech/audio, in sequence. Each new request attaches the **actual final PNG frame** extracted from the preceding generated Meta video. It repeats that channel's character, voice and camera/style locks. When the clip is already complete, reuse it on resumption. Vibes Studio is not an automatic fallback because its current exports fail the duration and native-audio requirements.
+3. Validate each generated clip: video+embedded audio, at least 720x1280 native source resolution, portrait orientation, 9.9–10.6 sec container duration, native audio at least 9.8 sec, and approximate first-frame similarity to the supplied last frame. Reject/retry a clip if it does not match. If Meta quota, UI, quality options or account access prevents generation, stop this channel and keep its incomplete job; **never replace with stock, separate voiceover or another generator**. FFmpeg normally resizes accepted clips into the 1440x2560 final master.
+4. FFmpeg extracts a matching handoff frame from each clip and **replaces**, rather than prepends, the next clip's first frame. It joins 5 × 300 normalized 30-fps frames with 5 native audio tracks, creating a **50-second** 1440x2560 Short with no transitions, external audio, overlays or added intro/outro. Pixel-perfect identity cannot be guaranteed after lossy H.264 encode; this method prevents intentional empty frames and minimizes visible discontinuity. Meta's subsequent motion may still jump; the handoff similarity check rejects conspicuous resets but cannot guarantee perfect actor/voice continuity.
+5. Upload once to each channel's configured YouTube account; retain all unuploaded jobs for resume. One successful video **per channel per run**. At four scheduled runs a day, that is up to 16 Shorts/day, **subject to Meta limits**, authentication, render success and GitHub Actions runtime.
 
-Open PowerShell in the repository:
+## Installation / update on Windows 11
 
-```powershell
-python -m pip install -r requirements.txt
-python -m playwright install chromium
-ffmpeg -version
-```
+1. Clone or pull the repository, then open PowerShell (non-administrator) in the project folder:
 
-The sourced-media channels can run with key-free public sources. These optional GitHub secrets improve media availability and matching:
+   ```powershell
+   python -m pip install -r requirements.txt
+   python -m playwright install chromium
+   ffmpeg -version
+   ```
 
-- `PEXELS_API_KEY`
-- `PIXABAY_API_KEY`
-- `COVERR_API_KEY`
-- `VIDEEZY_CLIENT_ID` and `VIDEEZY_CLIENT_SECRET`
-- `YOUTUBE_API_KEY`
-- `JAMENDO_CLIENT_ID`
-- `FREESOUND_API_KEY`
+2. To use the Meta login already active in your existing Chrome window, keep Chrome on `https://meta.ai/create`, enable `chrome://inspect/#remote-debugging` **only while importing**, and run:
 
-The configured channel voices use `edge-tts`, which is installed from `requirements.txt`.
+   ```powershell
+   python switch_meta_account.py --from-open-chrome
+   Test-Path .\meta_ai_storage_state.json
+   ```
 
-## Configure Meta for channel 3
+   This imports Meta-related state into `meta_ai_storage_state.json`; it does **not** make remote GitHub Actions use your running Chrome window. Turn remote debugging **off** afterward. Chrome might still require fresh authentication when the saved session runs on GitHub.
 
-Keep Chrome signed in on `https://meta.ai/create`, temporarily enable Chrome remote debugging for the import, then run:
+3. Preview *one* channel locally without uploading:
 
-```powershell
-python switch_meta_account.py --from-open-chrome
-python switch_meta_account.py --publish-only --repo YOUR_OWNER/YOUR_REPO
-```
+   ```powershell
+   python test_pipeline.py 2
+   ```
 
-This publishes slot 1 as `META_AI_STORAGE_STATE_B64`. Optional fallback accounts can be imported and published as slots 2–5 using the steps in [META_ACCOUNT_SWITCH.md](META_ACCOUNT_SWITCH.md). Never commit session JSON, cookies, browser profiles, OAuth secrets, or tokens.
+   **It can generate up to five real Meta clips**, consuming Meta quota. Verify output at `output_videos/PREVIEW_channel_2.mp4`. To preview all, omit `2`.
 
-Meta is used only by channel 3. Manual GitHub runs for channels 1, 2, or 4 skip the Meta-session requirement.
+4. Publish the Meta AI session to your actual GitHub repo:
 
-## Configure YouTube OAuth
+   ```powershell
+   gh auth login
+   python switch_meta_account.py --publish-only --repo YOUR_OWNER/YOUR_REPO
+   ```
 
-Use one Google Cloud project and one Desktop OAuth client for all four YouTube channels:
+   This updates the GitHub Actions secret `META_AI_STORAGE_STATE_B64`. **Do not commit session JSON, cookies, tokens or browser profile files.**
 
-1. Enable YouTube Data API v3.
-2. Save the client JSON as `credentials/youtube_shared_secrets.json`.
-3. Run `python auth_tokens.py` and authorize each YouTube channel, producing `channel1_token.json` through `channel4_token.json`.
-4. Publish `YOUTUBE_SHARED_SECRETS_B64` and `CHANNEL1_TOKEN_B64` through `CHANNEL4_TOKEN_B64` using `python setup.py` or `python encode_secrets.py`.
+   To enable automatic account failover, repeat the import and publication for
+   four different accounts using `--slot 2`, `--slot 3`, `--slot 4` and `--slot 5` as
+   documented in `META_ACCOUNT_SWITCH.md`. Slot 1 remains the primary account.
 
-The workflow rejects tokens belonging to a different OAuth client before generation begins.
+5. Configure YouTube OAuth with **one Google Cloud project**, not one project per channel:
 
-## Preview without uploading
+   - Enable YouTube Data API v3 in the retained project and create one Desktop OAuth client.
+   - Save the downloaded JSON as `credentials/youtube_shared_secrets.json`.
+   - Run `python auth_tokens.py` and choose the correct YouTube channel during each of the four authorization prompts. This creates four separate token files tied to the same client.
+   - Publish `YOUTUBE_SHARED_SECRETS_B64` plus `CHANNEL1_TOKEN_B64` through `CHANNEL4_TOKEN_B64` with `python setup.py` or `python encode_secrets.py`.
 
-```powershell
-# Restored sourced-media route
-python test_pipeline.py 1
+   The workflow rejects tokens issued by legacy per-channel projects before it spends Meta generation quota. Google's current [quota documentation](https://developers.google.com/youtube/data/guides/quota_and_compliance_audits) lists a default allowance of 100 `videos.insert` calls per day, so the planned maximum of 16 daily uploads is within that specific upload-call limit. If the retained project has a lower custom allocation or later needs more capacity, use the official audit and quota-extension process for this one project.
 
-# Meta route; this may consume five Meta generations
-python test_pipeline.py 3
+6. Push the updated project code and workflows to the repository's default branch:
 
-# Preview all channels sequentially
-python test_pipeline.py all
-```
+   ```powershell
+   git add -A
+   git commit -m "Use Meta Create only for native-audio Shorts"
+   git push
+   ```
 
-Outputs are written to `output_videos/PREVIEW_channel_N.mp4`. Preview media history is isolated from production deduplication state.
+   Check `git status` before committing to ensure credentials, browser profiles and saved Meta sessions are never staged.
 
-## Run or upload
+7. Trigger a manual test at **GitHub → Actions → YouTube Upload (Meta AI Only Every 6 Hours) → Run workflow → channel 2**. Review its logs and artifact diagnostics. If successful, use `all` (four channels). Scheduled runs always use `all`. Cron runs **00:13, 06:13, 12:13 and 18:13 UTC**.
 
-```powershell
-python main.py --once --channel 1
-python main.py --once --channel 3
-python main.py --once
-```
+## Limits and safety
 
-The first two commands upload only the selected channel; the last processes all four sequentially. Sequential execution is intentional because the restored media modules share temporary working filenames.
-
-## GitHub Actions schedule
-
-The workflow runs at `00:13`, `06:13`, `12:13`, and `18:13` UTC. Manual dispatch can select `all` or one channel. It validates that:
-
-- channel 3 alone is configured for Meta native video/audio;
-- channels 1, 2, and 4 use sourced media, locked narration, and music;
-- all selected YouTube tokens belong to the shared OAuth client.
-
-If channel 3 cannot render or download a valid 720×1280-or-better source clip with native audio, its unfinished job is retained for resumption. Other selected channels continue and are reported independently.
+- Meta does not guarantee five 10-second native-audio videos or a specific number of generations per account. One complete four-channel batch needs **20 accepted scene videos** (or up to 80/day if every six-hour run succeeds). Rate limits, UI changes and login challenges can prevent a run; an unsuccessful channel is reported as failed rather than silently substituted.
+- Native 720×1280 Meta clips are accepted and resized to the 1440×2560 final canvas. Anything below 720p still fails. A video-only export without a native audio stream is never padded or given separate TTS.
+- Current Chrome **cannot be directly controlled by GitHub-hosted runners**. GitHub Actions uses the imported session secret to open its own browser. An authenticated Chrome tab on your PC is not a persistent remote runner.
+- FFmpeg reuses the last frame as the next frame; video/image matching and audio lip sync are not guaranteed by Meta. Verify preview before enabling unattended uploads.
+- The video content is AI-generated; YouTube altered/synthetic disclosures may be required depending on depictions. For factual channels, verify scripts against the linked public sources.
+- Only the upload workflow runs every six hours. Script-generator health and YouTube cleanup are separate maintenance workflows with their own schedules.
