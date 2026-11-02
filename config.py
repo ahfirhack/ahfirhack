@@ -62,6 +62,10 @@ USED_VIDEOS_FILE   = "used_videos.json"
 USED_SCRIPTS_FILE  = "used_scripts.json"
 USED_PROMPTS_FILE  = "used_prompts.json"
 UPLOADED_TITLES_FILE = os.getenv("UPLOADED_TITLES_FILE", "uploaded_titles.json")
+YOUTUBE_SHARED_CLIENT_SECRETS_FILE = os.getenv(
+    "YOUTUBE_SHARED_CLIENT_SECRETS_FILE",
+    "credentials/youtube_shared_secrets.json",
+)
 PROMPT_RESERVE_DB  = os.getenv("PROMPT_RESERVE_DB", "prompt_reserve.sqlite3")
 PROMPT_RESERVE_DB_CHANNEL_1 = os.getenv(
     "PROMPT_RESERVE_DB_CHANNEL_1", "prompt_reserve_channel_1.sqlite3"
@@ -143,7 +147,7 @@ CHANNELS = [
         "banner_file": "assets/branding/channel_1/banner.jpg",
         "niche": "High-stakes technology and corporate true crime based on documented public cases involving cybercrime, startup deception, corporate fraud, data breaches, code failures, regulatory investigations, and billion-dollar consequences",
         "keywords": ["tech true crime", "corporate crime", "cybercrime", "startup fraud", "tech scandals", "financial crime", "data breach"],
-        "client_secrets_file": "credentials/channel1_secrets.json",
+        "client_secrets_file": YOUTUBE_SHARED_CLIENT_SECRETS_FILE,
         "token_file": "credentials/channel1_token.json",
         "use_voice": False,
         "use_music": False,
@@ -179,7 +183,7 @@ CHANNELS = [
         "banner_file": "assets/branding/channel_2/banner.jpg",
         "niche": "Deep high-retention storytelling with cinematic stakes, memorable characters, mysteries, impossible choices, escalating micro-reveals, emotional climaxes, and twist endings",
         "keywords": ["short stories", "storytelling", "plot twist", "cinematic stories", "mystery stories", "emotional stories"],
-        "client_secrets_file": "credentials/channel2_secrets.json",
+        "client_secrets_file": YOUTUBE_SHARED_CLIENT_SECRETS_FILE,
         "token_file": "credentials/channel2_token.json",
         "use_voice": False,
         "use_music": False,
@@ -204,7 +208,7 @@ CHANNELS = [
         "handle": "@EpicHistoryKids",
         "niche": "Kid-safe historical stories for ages 7-12 about ancient civilizations, famous people, inventions, discoveries, and everyday life, told with simple vocabulary, curiosity-first hooks, accurate facts, and no graphic violence",
         "keywords": ["history for kids", "kids history", "ancient civilizations", "historical stories", "famous people in history", "educational stories"],
-        "client_secrets_file": "credentials/channel3_secrets.json",
+        "client_secrets_file": YOUTUBE_SHARED_CLIENT_SECRETS_FILE,
         "token_file": "credentials/channel3_token.json",
         "use_voice": False,
         "use_music": False,
@@ -243,7 +247,7 @@ CHANNELS = [
         "banner_file": "assets/branding/channel_4/banner.jpg",
         "niche": "Applying ancient wisdom to modern stress, career burnout, and relationship mental health",
         "keywords": ["stoicism", "mental toughness", "modern philosophy", "career advice", "emotional intelligence"],
-        "client_secrets_file": "credentials/channel4_secrets.json",
+        "client_secrets_file": YOUTUBE_SHARED_CLIENT_SECRETS_FILE,
         "token_file": "credentials/channel4_token.json",
         "use_voice": False,
         "use_music": False,

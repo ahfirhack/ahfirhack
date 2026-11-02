@@ -29,20 +29,39 @@ class UploadReceiptTests(unittest.TestCase):
         creds.valid = False
         creds.expired = True
         creds.refresh_token = "refresh-token"
+        creds.client_id = "shared-client"
         creds.refresh.side_effect = RefreshError(
             "disabled_client: The OAuth client was disabled."
         )
         with (
             patch.object(uploader.os.path, "exists", return_value=True),
             patch.object(uploader.pickle, "load", return_value=creds),
+            patch.object(uploader, "_oauth_client_id", return_value="shared-client"),
             patch("builtins.open", MagicMock()),
         ):
             with self.assertRaisesRegex(
-                RuntimeError, "Re-enable that OAuth 2.0 client",
+                RuntimeError, "shared Google Cloud project",
             ):
                 uploader._get_authenticated_service(
                     "channel1-secrets.json", "channel1-token.json", "Silicon Crime Files"
                 )
+
+    def test_legacy_per_channel_token_is_rejected_before_refresh(self):
+        creds = MagicMock()
+        creds.client_id = "legacy-client"
+        with (
+            patch.object(uploader.os.path, "exists", return_value=True),
+            patch.object(uploader.pickle, "load", return_value=creds),
+            patch.object(uploader, "_oauth_client_id", return_value="shared-client"),
+            patch("builtins.open", MagicMock()),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "legacy per-channel OAuth token"):
+                uploader._get_authenticated_service(
+                    "youtube-shared.json",
+                    "channel2-token.json",
+                    "StoryFuse",
+                )
+        creds.refresh.assert_not_called()
 
     def test_recorded_upload_returns_without_youtube_api_call(self):
         with tempfile.TemporaryDirectory() as temp:

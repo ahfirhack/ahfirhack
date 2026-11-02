@@ -13,7 +13,7 @@ import os
 
 
 FILES = {
-    "CLIENT_SECRETS_B64":  "credentials/client_secrets.json",
+    "YOUTUBE_SHARED_SECRETS_B64": "credentials/youtube_shared_secrets.json",
     "CHANNEL1_TOKEN_B64":  "credentials/channel1_token.json",
     "CHANNEL2_TOKEN_B64":  "credentials/channel2_token.json",
     "CHANNEL3_TOKEN_B64":  "credentials/channel3_token.json",

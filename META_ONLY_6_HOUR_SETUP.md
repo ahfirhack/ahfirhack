@@ -50,7 +50,16 @@
    four different accounts using `--slot 2`, `--slot 3`, `--slot 4` and `--slot 5` as
    documented in `META_ACCOUNT_SWITCH.md`. Slot 1 remains the primary account.
 
-5. Push the updated project code and workflows to the repository's default branch:
+5. Configure YouTube OAuth with **one Google Cloud project**, not one project per channel:
+
+   - Enable YouTube Data API v3 in the retained project and create one Desktop OAuth client.
+   - Save the downloaded JSON as `credentials/youtube_shared_secrets.json`.
+   - Run `python auth_tokens.py` and choose the correct YouTube channel during each of the four authorization prompts. This creates four separate token files tied to the same client.
+   - Publish `YOUTUBE_SHARED_SECRETS_B64` plus `CHANNEL1_TOKEN_B64` through `CHANNEL4_TOKEN_B64` with `python setup.py` or `python encode_secrets.py`.
+
+   The workflow rejects tokens issued by legacy per-channel projects before it spends Meta generation quota. The every-six-hour schedule can exceed the default YouTube Data API quota, so request a quota extension for this single project through Google's official audit process before relying on all 16 daily uploads.
+
+6. Push the updated project code and workflows to the repository's default branch:
 
    ```powershell
    git add -A
@@ -60,7 +69,7 @@
 
    Check `git status` before committing to ensure credentials, browser profiles and saved Meta sessions are never staged.
 
-6. Trigger a manual test at **GitHub → Actions → YouTube Upload (Meta AI Only Every 6 Hours) → Run workflow → channel 2**. Review its logs and artifact diagnostics. If successful, use `all` (four channels). Scheduled runs always use `all`. Cron runs **00:13, 06:13, 12:13 and 18:13 UTC**.
+7. Trigger a manual test at **GitHub → Actions → YouTube Upload (Meta AI Only Every 6 Hours) → Run workflow → channel 2**. Review its logs and artifact diagnostics. If successful, use `all` (four channels). Scheduled runs always use `all`. Cron runs **00:13, 06:13, 12:13 and 18:13 UTC**.
 
 ## Limits and safety
 

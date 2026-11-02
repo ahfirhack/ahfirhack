@@ -1,10 +1,10 @@
 """
 setup.py - One-time automated setup for 4-Channel YouTube Bot
-Each channel has its own OAuth app (separate client_secrets file).
-Opens browser 4 times — one login per channel.
+All channels use one shared Google Cloud OAuth app and separate channel tokens.
+Opens the browser 4 times — one YouTube authorization per channel.
 
 What it does automatically:
-  - OAuth login for all 4 channels using their own secrets
+  - OAuth login for all 4 channels using one shared client
   - Encodes all credential files to base64
   - Pushes every secret + API key to GitHub
   - Bot runs forever after this
@@ -25,25 +25,25 @@ CHANNELS = [
     {
         "id":      1,
         "name":    "Silicon Crime Files",
-        "secrets": "credentials/channel1_secrets.json",
+        "secrets": "credentials/youtube_shared_secrets.json",
         "token":   "credentials/channel1_token.json",
     },
     {
         "id":      2,
         "name":    "StoryFuse",
-        "secrets": "credentials/channel2_secrets.json",
+        "secrets": "credentials/youtube_shared_secrets.json",
         "token":   "credentials/channel2_token.json",
     },
     {
         "id":      3,
         "name":    "Epic History Kids",
-        "secrets": "credentials/channel3_secrets.json",
+        "secrets": "credentials/youtube_shared_secrets.json",
         "token":   "credentials/channel3_token.json",
     },
     {
         "id":      4,
         "name":    "Stoic Reset",
-        "secrets": "credentials/channel4_secrets.json",
+        "secrets": "credentials/youtube_shared_secrets.json",
         "token":   "credentials/channel4_token.json",
     },
 ]
@@ -82,15 +82,18 @@ def validate_config():
         errors.append("Set GITHUB_REPO at top of setup.py")
     if not GITHUB_PAT:
         errors.append("Set YOUTUBE_BOT_GITHUB_PAT in your environment")
-    for ch in CHANNELS:
-        if not os.path.exists(ch["secrets"]):
-            errors.append("Missing " + ch["secrets"] + " — place channel" + str(ch["id"]) + "_secrets.json in credentials/")
+    shared_secrets = CHANNELS[0]["secrets"]
+    if not os.path.exists(shared_secrets):
+        errors.append(
+            "Missing " + shared_secrets
+            + " — download the single shared desktop OAuth client into credentials/"
+        )
     if errors:
         print("\n[Setup] Fix these first:\n")
         for e in errors:
             print("  -> " + e)
         sys.exit(1)
-    print("[Setup] Config valid — all 4 secrets files found")
+    print("[Setup] Config valid — shared OAuth client found")
 
 
 def run_oauth_for_channel(ch: dict):
@@ -102,8 +105,17 @@ def run_oauth_for_channel(ch: dict):
     token_f = ch["token"]
 
     if os.path.exists(token_f):
-        print(f"[OAuth] Channel {ch_id} ({name}): token exists, skipping")
-        return
+        with open(secrets, encoding="utf-8") as f:
+            payload = json.load(f)
+        client_config = payload.get("installed") or payload.get("web") or {}
+        with open(token_f, "rb") as f:
+            existing = pickle.load(f)
+        if str(getattr(existing, "client_id", "") or "") == str(
+            client_config.get("client_id") or ""
+        ):
+            print(f"[OAuth] Channel {ch_id} ({name}): shared-client token exists, skipping")
+            return
+        print(f"[OAuth] Channel {ch_id} ({name}): replacing legacy per-channel token")
 
     print(f"\n{'='*55}")
     print(f"  CHANNEL {ch_id}: {name}")
@@ -178,10 +190,13 @@ def push_all_secrets():
 
     all_secrets = {}
 
-    # Each channel: encode its own secrets file + token
+    all_secrets["YOUTUBE_SHARED_SECRETS_B64"] = encode_file(
+        CHANNELS[0]["secrets"]
+    )
+
+    # Each channel keeps only its own refresh token.
     for ch in CHANNELS:
         i = ch["id"]
-        all_secrets[f"CHANNEL{i}_SECRETS_B64"] = encode_file(ch["secrets"])
         all_secrets[f"CHANNEL{i}_TOKEN_B64"]   = encode_file(ch["token"])
 
     # API keys from the environment
@@ -200,10 +215,10 @@ def verify_secrets():
         print("[Verify] Cannot list secrets: " + str(r.status_code))
         return False
     names = [s["name"] for s in r.json().get("secrets", [])]
-    required = []
+    required = ["YOUTUBE_SHARED_SECRETS_B64"]
     for ch in CHANNELS:
         i = ch["id"]
-        required += [f"CHANNEL{i}_SECRETS_B64", f"CHANNEL{i}_TOKEN_B64"]
+        required.append(f"CHANNEL{i}_TOKEN_B64")
     all_ok = True
     for name in required:
         status = "OK" if name in names else "MISSING"
@@ -216,14 +231,14 @@ def verify_secrets():
 def main():
     print("\n" + "="*55)
     print("  4-CHANNEL YOUTUBE BOT - ONE-TIME SETUP")
-    print("  (4 separate OAuth apps)")
+    print("  (one shared OAuth app; four channel tokens)")
     print("="*55 + "\n")
 
     check_requirements()
     validate_config()
 
-    print("\nIMPORTANT - Publish all 4 OAuth apps to make tokens permanent:")
-    print("  For EACH channel's Google Cloud project:")
+    print("\nIMPORTANT - Publish the shared OAuth app to make tokens permanent:")
+    print("  In the ONE Google Cloud project:")
     print("  APIs & Services -> OAuth consent screen -> Publish App")
     print("\nPress Enter when done (or Enter to skip for now)...")
     input()

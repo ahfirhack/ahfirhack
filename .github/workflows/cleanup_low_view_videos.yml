@@ -39,11 +39,17 @@ jobs:
           pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
 
       - name: Restore Channel 1, Channel 2, and Channel 4 credentials
+        env:
+          YOUTUBE_SHARED_SECRETS_B64: ${{ secrets.YOUTUBE_SHARED_SECRETS_B64 }}
+          LEGACY_CHANNEL1_SECRETS_B64: ${{ secrets.CHANNEL1_SECRETS_B64 }}
         run: |
           mkdir -p credentials
-          printf '%s' "${{ secrets.CHANNEL1_SECRETS_B64 }}" | base64 --decode > credentials/channel1_secrets.json
-          printf '%s' "${{ secrets.CHANNEL2_SECRETS_B64 }}" | base64 --decode > credentials/channel2_secrets.json
-          printf '%s' "${{ secrets.CHANNEL4_SECRETS_B64 }}" | base64 --decode > credentials/channel4_secrets.json
+          shared_oauth="${YOUTUBE_SHARED_SECRETS_B64:-$LEGACY_CHANNEL1_SECRETS_B64}"
+          if [ -z "$shared_oauth" ]; then
+            echo "Missing YOUTUBE_SHARED_SECRETS_B64 (one OAuth client for all channels)."
+            exit 1
+          fi
+          printf '%s' "$shared_oauth" | base64 --decode > credentials/youtube_shared_secrets.json
           printf '%s' "${{ secrets.CHANNEL1_TOKEN_B64 }}" | base64 --decode > credentials/channel1_token.json
           printf '%s' "${{ secrets.CHANNEL2_TOKEN_B64 }}" | base64 --decode > credentials/channel2_token.json
           printf '%s' "${{ secrets.CHANNEL4_TOKEN_B64 }}" | base64 --decode > credentials/channel4_token.json

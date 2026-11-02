@@ -85,11 +85,56 @@ def _remember_upload(
         pending.replace(ledger_path)
 
 
+def _oauth_client_id(client_secrets_file: str) -> str:
+    """Return the configured shared OAuth client ID without logging secrets."""
+    try:
+        with open(client_secrets_file, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(
+            f"Shared YouTube OAuth credentials are missing or invalid: "
+            f"{client_secrets_file}"
+        ) from error
+    config = payload.get("installed") or payload.get("web") or {}
+    client_id = str(config.get("client_id") or "")
+    if not client_id:
+        raise RuntimeError(
+            f"Shared YouTube OAuth credentials have no client_id: "
+            f"{client_secrets_file}"
+        )
+    return client_id
+
+
+def _require_shared_client(
+    creds,
+    client_secrets_file: str,
+    token_file: str,
+    channel_name: str,
+) -> None:
+    """Reject legacy per-channel tokens before they contact Google."""
+    expected_client_id = _oauth_client_id(client_secrets_file)
+    actual_client_id = str(getattr(creds, "client_id", "") or "")
+    if actual_client_id == expected_client_id:
+        return
+    slot_match = re.search(r"channel(\d+)", token_file, re.IGNORECASE)
+    slot = slot_match.group(1) if slot_match else "<channel-number>"
+    raise RuntimeError(
+        f"{channel_name} still uses a legacy per-channel OAuth token. "
+        "Google requires every channel to use the one shared OAuth project. "
+        f"Run `python auth_tokens.py {slot}` locally and republish "
+        f"CHANNEL{slot}_TOKEN_B64 before running this channel."
+    )
+
+
 def _get_authenticated_service(client_secrets_file: str, token_file: str, channel_name: str):
     creds = None
     if os.path.exists(token_file):
         with open(token_file, "rb") as f:
             creds = pickle.load(f)
+        if creds:
+            _require_shared_client(
+                creds, client_secrets_file, token_file, channel_name
+            )
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
@@ -105,10 +150,11 @@ def _get_authenticated_service(client_secrets_file: str, token_file: str, channe
                         if slot != "N" else "python auth_tokens.py <channel-number>"
                     )
                     raise RuntimeError(
-                        f"YouTube OAuth client is disabled for {channel_name}. "
-                        "Re-enable that OAuth 2.0 client in Google Cloud, or create "
-                        f"a replacement client, run `{auth_command}` locally, then "
-                        f"republish CHANNEL{slot}_SECRETS_B64 and CHANNEL{slot}_TOKEN_B64. "
+                        f"The shared YouTube OAuth client is disabled for {channel_name}. "
+                        "Restore the one shared Google Cloud project through its "
+                        "suspension appeal; do not create another per-channel project. "
+                        f"Then run `{auth_command}` locally and republish "
+                        f"CHANNEL{slot}_TOKEN_B64. "
                         "The completed Meta video job remains cached and will not "
                         "be regenerated."
                     ) from error

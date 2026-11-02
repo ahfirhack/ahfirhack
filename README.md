@@ -6,6 +6,8 @@ This project produces **one 50-second YouTube Short per channel per run**, using
 
 **Channels:** Silicon Crime Files (`@SiliconCrimeFiles`), StoryFuse (`@StoryFuseTV`), Epic History Kids (`@EpicHistoryKids`), Stoic Reset (`@StoicResetShorts`).
 
+All four channels must authorize through **one shared Google Cloud OAuth project**. Separate projects used as a combined quota pool violate Google Cloud quota policy and are rejected by this repository. Keep one token per YouTube channel and request an official YouTube Data API quota extension for the four-runs-per-day schedule.
+
 Read **[META_ONLY_6_HOUR_SETUP.md](META_ONLY_6_HOUR_SETUP.md)** for full instructions, account import, GitHub secret setup, local previews and limitations.
 
 ### Processing stages

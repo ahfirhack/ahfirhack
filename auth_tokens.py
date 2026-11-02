@@ -1,6 +1,7 @@
 """
 auth_tokens.py — Generate YouTube OAuth tokens for each channel.
-Run this ONCE per channel. Opens browser for Google login.
+All channels use one shared Google Cloud OAuth client and keep separate tokens.
+Run this once per channel after creating/restoring that shared client.
 No video production, no uploading.
 
 Usage:
@@ -12,6 +13,7 @@ Usage:
 import os
 import sys
 import pickle
+import json
 import google.auth.transport.requests
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -23,6 +25,47 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube",
 ]
+
+
+def _oauth_client_id(secrets_file: str) -> str:
+    try:
+        with open(secrets_file, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(
+            f"Shared OAuth credentials are missing or invalid: {secrets_file}"
+        ) from error
+    config = payload.get("installed") or payload.get("web") or {}
+    client_id = str(config.get("client_id") or "")
+    if not client_id:
+        raise RuntimeError(
+            f"Shared OAuth credentials have no client_id: {secrets_file}"
+        )
+    return client_id
+
+
+def _verified_channel(creds) -> dict:
+    youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
+    response = youtube.channels().list(
+        part="snippet", mine=True, maxResults=1
+    ).execute()
+    items = response.get("items", [])
+    if len(items) != 1:
+        raise RuntimeError("Authenticated YouTube channel could not be resolved.")
+    return items[0]
+
+
+def _title_matches(actual: str, expected: str) -> bool:
+    return " ".join(actual.casefold().split()) == " ".join(expected.casefold().split())
+
+
+def _identity_matches(identity: dict, channel: dict) -> bool:
+    snippet = identity.get("snippet", {})
+    actual_handle = str(snippet.get("customUrl") or "").lstrip("@").casefold()
+    expected_handle = str(channel.get("handle") or "").lstrip("@").casefold()
+    if actual_handle and expected_handle:
+        return actual_handle == expected_handle
+    return _title_matches(str(snippet.get("title") or ""), channel["name"])
 
 
 def authenticate_channel(channel: dict):
@@ -40,8 +83,13 @@ def authenticate_channel(channel: dict):
     # Check secrets file exists
     if not os.path.exists(secrets_file):
         print(f"\n  [SKIP] Client secrets file not found: {secrets_file}")
-        print(f"  Download it from Google Cloud Console -> Credentials -> OAuth 2.0 Client IDs")
+        print("  Download the ONE shared OAuth desktop client from Google Cloud Console")
         print(f"  Save it as: {secrets_file}")
+        return False
+    try:
+        shared_client_id = _oauth_client_id(secrets_file)
+    except RuntimeError as error:
+        print(f"\n  [SKIP] {error}")
         return False
 
     # Check if token already exists and is valid
@@ -50,16 +98,23 @@ def authenticate_channel(channel: dict):
         with open(token_file, "rb") as f:
             creds = pickle.load(f)
 
+        if str(getattr(creds, "client_id", "") or "") != shared_client_id:
+            print("\n  Legacy per-channel token detected; re-authorizing with the shared client...")
+            creds = None
+
         if creds and creds.valid:
             # Verify by calling YouTube API
             try:
-                youtube = build("youtube", "v3", credentials=creds)
-                resp = youtube.channels().list(part="snippet", mine=True).execute()
-                items = resp.get("items", [])
-                if items:
-                    ch_title = items[0]["snippet"]["title"]
+                identity = _verified_channel(creds)
+                ch_title = str(identity.get("snippet", {}).get("title") or "")
+                if _identity_matches(identity, channel):
                     print(f"\n  [OK] Token valid. Authenticated as: {ch_title}")
                     return True
+                print(
+                    f"\n  Token belongs to '{ch_title}', not '{name}'; "
+                    "re-authenticating..."
+                )
+                creds = None
             except Exception as e:
                 print(f"\n  Token exists but verification failed: {e}")
                 print(f"  Re-authenticating...")
@@ -68,9 +123,16 @@ def authenticate_channel(channel: dict):
             try:
                 print(f"\n  Token expired. Refreshing...")
                 creds.refresh(google.auth.transport.requests.Request())
+                identity = _verified_channel(creds)
+                ch_title = str(identity.get("snippet", {}).get("title") or "")
+                if not _identity_matches(identity, channel):
+                    raise RuntimeError(
+                        f"Refreshed token belongs to '{ch_title}', not the "
+                        f"configured handle {channel.get('handle')}."
+                    )
                 with open(token_file, "wb") as f:
                     pickle.dump(creds, f)
-                print(f"  [OK] Token refreshed successfully.")
+                print(f"  [OK] Token refreshed successfully for: {ch_title}")
                 return True
             except Exception as e:
                 print(f"\n  Refresh failed: {e}")
@@ -88,20 +150,22 @@ def authenticate_channel(channel: dict):
 
     try:
         flow = InstalledAppFlow.from_client_secrets_file(secrets_file, SCOPES)
-        creds = flow.run_local_server(port=0)
+        creds = flow.run_local_server(
+            port=0, prompt="consent", access_type="offline"
+        )
+
+        identity = _verified_channel(creds)
+        ch_title = str(identity.get("snippet", {}).get("title") or "")
+        if not _identity_matches(identity, channel):
+            raise RuntimeError(
+                f"Authorized '{ch_title}', but this token slot requires '{name}'. "
+                "No token was saved; run again and choose the correct channel."
+            )
 
         with open(token_file, "wb") as f:
             pickle.dump(creds, f)
 
-        # Verify
-        youtube = build("youtube", "v3", credentials=creds)
-        resp = youtube.channels().list(part="snippet", mine=True).execute()
-        items = resp.get("items", [])
-        if items:
-            ch_title = items[0]["snippet"]["title"]
-            print(f"  [OK] Token saved. Authenticated as: {ch_title}")
-        else:
-            print(f"  [OK] Token saved. (Could not verify channel name)")
+        print(f"  [OK] Token saved. Authenticated as: {ch_title}")
 
         return True
 
@@ -149,7 +213,7 @@ def main():
 
     if fail_count:
         print(f"\n  For failed channels, make sure:")
-        print(f"  1. credentials/channelN_secrets.json exists (from Google Cloud Console)")
+        print("  1. credentials/youtube_shared_secrets.json exists")
         print(f"  2. YouTube Data API v3 is enabled in your Google Cloud project")
         print(f"  3. OAuth consent screen is configured")
 

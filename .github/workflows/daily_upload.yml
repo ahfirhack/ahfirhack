@@ -99,20 +99,48 @@ jobs:
             meta-ai-video-jobs-${{ runner.os }}-
 
       - name: Restore credentials
+        env:
+          YOUTUBE_SHARED_SECRETS_B64: ${{ secrets.YOUTUBE_SHARED_SECRETS_B64 }}
+          LEGACY_CHANNEL1_SECRETS_B64: ${{ secrets.CHANNEL1_SECRETS_B64 }}
+          SELECTED_CHANNEL: ${{ inputs.channel || 'all' }}
         run: |
           mkdir -p credentials
-          printf '%s' "${{ secrets.CHANNEL1_SECRETS_B64 }}" | base64 --decode > credentials/channel1_secrets.json
-          printf '%s' "${{ secrets.CHANNEL2_SECRETS_B64 }}" | base64 --decode > credentials/channel2_secrets.json
-          printf '%s' "${{ secrets.CHANNEL3_SECRETS_B64 }}" | base64 --decode > credentials/channel3_secrets.json
-          printf '%s' "${{ secrets.CHANNEL4_SECRETS_B64 }}" | base64 --decode > credentials/channel4_secrets.json
-
-          # FIX: Create a generic secrets.json if your script specifically looks for that name
-          cp credentials/channel1_secrets.json credentials/secrets.json
+          shared_oauth="${YOUTUBE_SHARED_SECRETS_B64:-$LEGACY_CHANNEL1_SECRETS_B64}"
+          if [ -z "$shared_oauth" ]; then
+            echo "Missing YOUTUBE_SHARED_SECRETS_B64 (one OAuth client for all channels)."
+            exit 1
+          fi
+          printf '%s' "$shared_oauth" | base64 --decode > credentials/youtube_shared_secrets.json
+          cp credentials/youtube_shared_secrets.json credentials/secrets.json
 
           printf '%s' "${{ secrets.CHANNEL1_TOKEN_B64 }}"   | base64 --decode > credentials/channel1_token.json
           printf '%s' "${{ secrets.CHANNEL2_TOKEN_B64 }}"   | base64 --decode > credentials/channel2_token.json
           printf '%s' "${{ secrets.CHANNEL3_TOKEN_B64 }}"   | base64 --decode > credentials/channel3_token.json
           printf '%s' "${{ secrets.CHANNEL4_TOKEN_B64 }}"   | base64 --decode > credentials/channel4_token.json
+
+          python - <<'PY'
+          import json, os, pickle
+          shared = json.load(open("credentials/youtube_shared_secrets.json", encoding="utf-8"))
+          shared_config = shared.get("installed") or shared.get("web") or {}
+          shared_client_id = str(shared_config.get("client_id") or "")
+          if not shared_client_id:
+              raise SystemExit("Shared OAuth credential has no client_id")
+          selected = os.environ["SELECTED_CHANNEL"]
+          slots = range(1, 5) if selected == "all" else (int(selected),)
+          mismatched = []
+          for slot in slots:
+              with open(f"credentials/channel{slot}_token.json", "rb") as handle:
+                  token = pickle.load(handle)
+              if str(getattr(token, "client_id", "") or "") != shared_client_id:
+                  mismatched.append(str(slot))
+          if mismatched:
+              commands = ", ".join(f"python auth_tokens.py {slot}" for slot in mismatched)
+              raise SystemExit(
+                  "Legacy per-channel OAuth tokens rejected. Re-authorize with the one "
+                  f"shared project first: {commands}"
+              )
+          print(f"[OAuth] Shared client verified for channel slot(s): {', '.join(map(str, slots))}")
+          PY
 
       - name: Ensure dedup and prompt-reserve state exists
         run: |
