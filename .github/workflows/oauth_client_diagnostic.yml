@@ -1,0 +1,33 @@
+name: OAuth Client Diagnostic
+
+on:
+  workflow_dispatch:
+
+jobs:
+  identify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Identify Channel 1 OAuth project without exposing credentials
+        env:
+          CHANNEL1_SECRETS_B64: ${{ secrets.CHANNEL1_SECRETS_B64 }}
+        run: |
+          python - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+
+          payload = json.loads(base64.b64decode(
+              os.environ["CHANNEL1_SECRETS_B64"]
+          ))
+          config = payload.get("installed") or payload.get("web") or {}
+          client_id = str(config.get("client_id") or "")
+          project_id = str(config.get("project_id") or "")
+          if not client_id or not project_id:
+              raise SystemExit("Channel 1 OAuth secret is missing project/client metadata")
+          print(f"CHANNEL1_OAUTH_PROJECT={project_id}")
+          print(f"CHANNEL1_CLIENT_SHA256={hashlib.sha256(client_id.encode()).hexdigest()}")
+          print(f"CHANNEL1_CLIENT_SUFFIX={client_id[-32:]}")
+          PY
